@@ -17,6 +17,8 @@ log = logging.getLogger(__name__)
 
 STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
 LISTENING_COLOR = (0, 255, 0)
+# Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
+ECHO_SETTLE_SECONDS = 1.0
 SPEAKING_COLOR = (0, 0, 255)
 
 
@@ -58,6 +60,7 @@ async def run(settings: Settings) -> None:
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
             await asyncio.to_thread(play, speech, tts.sample_rate)
+            await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
 async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:
