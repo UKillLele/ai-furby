@@ -14,7 +14,7 @@ class FakeWhisper:
 
     def transcribe(self, audio, **_kwargs):
         self.received.append(audio)
-        return ([SimpleNamespace(text=t) for t in self._texts], None)
+        return ([SimpleNamespace(text=t, no_speech_prob=0.1, avg_logprob=-0.2) for t in self._texts], None)
 
 
 class FakeVoice:
@@ -43,3 +43,19 @@ def test_synthesize_concatenates_chunks_and_reports_sample_rate():
 
     assert tts.sample_rate == 22050
     assert tts.synthesize("hi").tolist() == [1, 2, 3]
+
+
+def test_transcribe_drops_segments_whisper_is_unsure_about():
+    class UnsureWhisper:
+        def transcribe(self, _audio, **_kwargs):
+            return (
+                [
+                    SimpleNamespace(text="Thank you for watching", no_speech_prob=0.9, avg_logprob=-0.3),
+                    SimpleNamespace(text="can you hear me", no_speech_prob=0.05, avg_logprob=-0.2),
+                    SimpleNamespace(text="maybe", no_speech_prob=0.1, avg_logprob=-2.5),
+                ],
+                None,
+            )
+
+    stt = SpeechToText(Settings(), model=UnsureWhisper())
+    assert stt.transcribe(np.zeros(10, dtype=np.float32)) == "can you hear me"
