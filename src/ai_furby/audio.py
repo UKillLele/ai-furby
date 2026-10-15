@@ -9,18 +9,38 @@ INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
 
 
+def find_input_device(name_part: str) -> int | None:
+    """Returns the index of an input device whose name contains `name_part`.
+
+    Windows lists the same mic under several host APIs, so WASAPI is preferred when it is available.
+    """
+    matches = []
+    for index, device in enumerate(sd.query_devices()):
+        if device["max_input_channels"] > 0 and name_part.lower() in device["name"].lower():
+            host_api = sd.query_hostapis(device["hostapi"])["name"]
+            matches.append((0 if "WASAPI" in host_api else 1, index))
+    return min(matches)[1] if matches else None
+
+
 def record_utterance(
     threshold: float = 0.02,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
-    device: int | str | None = None,
+    device: str | int | None = None,
 ) -> np.ndarray:
-    """Waits for speech, records until a pause, and returns mono float32 audio.
+    """Waits for speech, records until a pause, and returns mono float32 audio at 16 kHz.
 
     Returns an empty array if no speech starts within `wait_seconds`.
     """
-    block = int(INPUT_SAMPLE_RATE * BLOCK_SECONDS)
+    if isinstance(device, str):
+        device = find_input_device(device)
+        if device is None:
+            raise RuntimeError(f"No input device matches {device!r}; list devices with sounddevice.query_devices()")
+
+    # WASAPI often refuses 16 kHz, so capture at the device's own rate and resample afterwards.
+    device_rate = int(sd.query_devices(device, kind="input")["default_samplerate"])
+    block = int(device_rate * BLOCK_SECONDS)
     silent_blocks_to_stop = int(silence_seconds / BLOCK_SECONDS)
     max_blocks = int(max_seconds / BLOCK_SECONDS)
     wait_blocks = int(wait_seconds / BLOCK_SECONDS)
@@ -29,7 +49,7 @@ def record_utterance(
     speaking = False
     silent_run = 0
 
-    with sd.InputStream(samplerate=INPUT_SAMPLE_RATE, channels=1, dtype="float32", blocksize=block, device=device) as stream:
+    with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=device) as stream:
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
             samples = data[:, 0]
@@ -50,7 +70,16 @@ def record_utterance(
 
     if not captured:
         return np.zeros(0, dtype=np.float32)
-    return np.concatenate(captured)
+    return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
+
+
+def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    if from_rate == to_rate:
+        return samples
+    target_length = int(len(samples) * to_rate / from_rate)
+    old_positions = np.linspace(0.0, 1.0, num=len(samples))
+    new_positions = np.linspace(0.0, 1.0, num=target_length)
+    return np.interp(new_positions, old_positions, samples).astype(np.float32)
 
 
 def play(samples: np.ndarray, sample_rate: int) -> None:
