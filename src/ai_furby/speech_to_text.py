@@ -12,6 +12,9 @@ import numpy as np
 
 from ai_furby.config import Settings
 
+MAX_NO_SPEECH_PROB = 0.6  # above this, Whisper thinks the segment is silence or noise
+MIN_AVG_LOGPROB = -1.0  # below this, Whisper is guessing
+
 
 def _add_cuda_dll_dirs() -> None:
     """On Windows, the pip-installed NVIDIA runtime DLLs (cuBLAS, cuDNN) are not on the search path by default."""
@@ -44,7 +47,14 @@ class SpeechToText:
         segments, _info = self._model.transcribe(
             audio.astype(np.float32),
             language="en",
-            beam_size=1,
+            beam_size=5,
             vad_filter=True,
+            condition_on_previous_text=False,
         )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        # Whisper invents stock phrases ("Thank you for watching") over noise. Drop segments it is unsure about.
+        kept = [
+            segment.text.strip()
+            for segment in segments
+            if segment.no_speech_prob <= MAX_NO_SPEECH_PROB and segment.avg_logprob >= MIN_AVG_LOGPROB
+        ]
+        return " ".join(kept).strip()
