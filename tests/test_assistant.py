@@ -62,3 +62,11 @@ def test_reset_clears_history():
     assistant.reply("again")
 
     assert client.messages.calls[-1]["messages"] == [{"role": "user", "content": "again"}]
+
+
+def test_missing_api_key_gives_clear_error(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is not set"):
+        Assistant(SETTINGS)

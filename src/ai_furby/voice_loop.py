@@ -47,7 +47,12 @@ async def run(settings: Settings) -> None:
                 print("Furby: Bye for now!")
                 break
 
-            reply = await asyncio.to_thread(assistant.reply, heard)
+            try:
+                reply = await asyncio.to_thread(assistant.reply, heard)
+            except Exception as error:  # a failed API call should not end the conversation
+                log.exception("Claude request failed")
+                print(f"Furby: (could not think of a reply: {type(error).__name__})")
+                continue
             print(f"Furby: {reply}")
 
             await _set_antenna(furby, SPEAKING_COLOR)

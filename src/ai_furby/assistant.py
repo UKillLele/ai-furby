@@ -21,6 +21,13 @@ class Assistant:
     def __init__(self, settings: Settings, client: Any | None = None) -> None:
         self._model = settings.claude_model
         if client is None:
+            import os
+
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise RuntimeError(
+                    "ANTHROPIC_API_KEY is not set in this terminal. Open a new terminal after setting it, "
+                    "or check that it is set as a user environment variable."
+                )
             import anthropic  # imported lazily so tests run without the SDK configured
 
             client = anthropic.Anthropic()
