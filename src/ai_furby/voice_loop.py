@@ -33,7 +33,9 @@ async def run(settings: Settings) -> None:
         print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
             await _set_antenna(furby, LISTENING_COLOR)
-            audio = await asyncio.to_thread(record_utterance, device=settings.mic_device)
+            audio = await asyncio.to_thread(
+                record_utterance, threshold=settings.mic_threshold, device=settings.mic_device
+            )
             if audio.size == 0:
                 continue
 
