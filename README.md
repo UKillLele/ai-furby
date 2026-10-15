@@ -28,3 +28,18 @@ python -m pytest
 - `src/ai_furby/config.py`: settings from environment variables.
 
 Planned next: the assistant loop (mic, speech-to-text, LLM with persona and memory, TTS to speakers) and sensor events as input. API keys go in environment variables, never in the repo.
+
+## Run the assistant
+
+Needs an `ANTHROPIC_API_KEY` in your environment. The first run downloads the Whisper `small` model.
+
+```bash
+python -m ai_furby
+```
+
+Settings (all optional):
+
+- `FURBY_ADDRESS`: Furby Bluetooth address. Leave unset to run audio-only.
+- `CLAUDE_MODEL`: default `claude-haiku-5-5`.
+- `WHISPER_MODEL`, `WHISPER_DEVICE`, `WHISPER_COMPUTE_TYPE`: default `small`, `cuda`, `float16`. For CPU, use `WHISPER_DEVICE=cpu` and `WHISPER_COMPUTE_TYPE=int8`.
+- `PIPER_MODEL`: default `models/piper/en_US-lessac-medium.onnx`. Download voices with `python -m piper.download_voices --download-dir models/piper en_US-lessac-medium`.

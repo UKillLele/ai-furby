@@ -1,3 +1,9 @@
 pyfluff @ git+https://github.com/martinwoodward/PyFluff.git
 pytest
 anthropic
+faster-whisper
+sounddevice
+numpy
+piper-tts
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
