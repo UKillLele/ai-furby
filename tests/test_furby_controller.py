@@ -26,7 +26,7 @@ class FakeFurby:
         self.calls.append(("action", input, index, subindex, specific))
 
 
-SETTINGS = Settings(furby_address="AA:BB:CC:DD:EE:FF", furby_connect_timeout=5.0)
+SETTINGS = Settings(furby_address="AA:BB:CC:DD:EE:FF", furby_connect_timeout=5.0, claude_model="claude-haiku-5-5")
 
 
 def run(coro):

@@ -1,2 +1,3 @@
 pyfluff @ git+https://github.com/martinwoodward/PyFluff.git
 pytest
+anthropic
