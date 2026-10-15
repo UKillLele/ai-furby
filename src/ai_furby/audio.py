@@ -7,6 +7,7 @@ import sounddevice as sd
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
+MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 
 
 def find_input_device(name_part: str) -> int | None:
@@ -23,7 +24,7 @@ def find_input_device(name_part: str) -> int | None:
 
 
 def record_utterance(
-    threshold: float = 0.008,
+    threshold: float = 0.02,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
@@ -46,24 +47,31 @@ def record_utterance(
     wait_blocks = int(wait_seconds / BLOCK_SECONDS)
 
     captured: list[np.ndarray] = []
+    pending: list[np.ndarray] = []  # loud blocks that may be the start of speech, not yet confirmed
     speaking = False
     silent_run = 0
 
     with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=device) as stream:
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
-            samples = data[:, 0]
+            samples = data[:, 0].copy()
             loud = float(np.sqrt(np.mean(np.square(samples)))) > threshold
 
             if not speaking:
                 if index >= wait_blocks:
                     break
-                if loud:
+                if not loud:
+                    pending.clear()
+                    continue
+                pending.append(samples)
+                # Short clicks and bumps are loud for only a block or two; require a sustained burst before starting.
+                if len(pending) >= MIN_SPEECH_BLOCKS:
                     speaking = True
-                    captured.append(samples.copy())
+                    captured.extend(pending)
+                    pending.clear()
                 continue
 
-            captured.append(samples.copy())
+            captured.append(samples)
             silent_run = 0 if loud else silent_run + 1
             if silent_run >= silent_blocks_to_stop:
                 break
