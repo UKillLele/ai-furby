@@ -9,7 +9,7 @@ import re
 import threading
 import time
 
-from ai_furby.antenna_touch import is_antenna_movement
+from ai_furby.antenna_touch import is_input
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
@@ -229,7 +229,7 @@ async def _antenna_touched(furby: FurbyRemote | None) -> None:
         await asyncio.sleep(0.1)
         now = time.monotonic()
         for raw in furby.drain_sensor_readings():
-            if is_antenna_movement(raw):
+            if is_input(raw):
                 recent.append(now)
         recent = [t for t in recent if now - t <= ANTENNA_WINDOW_SECONDS]
         if len(recent) >= ANTENNA_TOUCHES_NEEDED:

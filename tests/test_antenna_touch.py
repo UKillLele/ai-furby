@@ -1,20 +1,13 @@
-from ai_furby.antenna_touch import is_antenna_movement
+from ai_furby.antenna_touch import is_input
 
 
-def test_antenna_movement_readings_are_recognized():
-    assert is_antenna_movement("2101000001000000")
-    assert is_antenna_movement("2102000001000000")
-    assert is_antenna_movement("2101060001000000")  # moved while a tickle value was set
-    assert is_antenna_movement("2100800001000000")
+def test_antenna_pet_tickle_and_shake_all_count_as_input():
+    assert is_input("2101000001000000")  # antenna
+    assert is_input("2100040001000000")  # pet
+    assert is_input("2100060001000000")  # tickle
+    assert is_input("2100460001000000")  # shake
 
 
-def test_pet_and_tickle_are_not_antenna_movement():
-    assert not is_antenna_movement("2100040001000000")
-    assert not is_antenna_movement("2100050001000000")
-    assert not is_antenna_movement("2100030001000000")
-    assert not is_antenna_movement("2100060001000000")
-
-
-def test_idle_and_shake_readings_are_not_antenna_movement():
-    assert not is_antenna_movement("2100000001000000")
-    assert not is_antenna_movement("21000e0040000000")
+def test_at_rest_readings_do_not_count():
+    assert not is_input("2100000001000000")
+    assert not is_input("21000e0001000000")
