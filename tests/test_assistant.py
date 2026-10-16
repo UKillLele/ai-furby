@@ -70,3 +70,25 @@ def test_missing_api_key_gives_clear_error(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is not set"):
         Assistant(SETTINGS)
+
+
+def test_split_mood_separates_tag_from_spoken_text():
+    from ai_furby.assistant import split_mood
+
+    assert split_mood("Hello there!\nMOOD: excited") == ("Hello there!", "excited")
+    assert split_mood("Hi.\nMOOD: Sleepy  ") == ("Hi.", "sleepy")
+
+
+def test_split_mood_ignores_unknown_or_missing_mood():
+    from ai_furby.assistant import split_mood
+
+    assert split_mood("Hi there.\nMOOD: grumpy") == ("Hi there.\nMOOD: grumpy", None)
+    assert split_mood("Just talking.") == ("Just talking.", None)
+
+
+def test_reply_sets_last_mood():
+    client = FakeClient("Yay, hello!\nMOOD: happy")
+    assistant = Assistant(SETTINGS, client=client)
+
+    assert assistant.reply("hi") == "Yay, hello!"
+    assert assistant.last_mood == "happy"

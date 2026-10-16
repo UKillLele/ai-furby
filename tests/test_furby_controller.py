@@ -63,3 +63,23 @@ def test_trigger_action_passes_ids_through():
     controller = FurbyController(SETTINGS, client_factory=lambda: fake)
     run(controller.trigger_action(1, 2, 3, 4))
     assert ("action", 1, 2, 3, 4) in fake.calls
+
+
+def test_play_action_turns_group_on_triggers_then_off():
+    written: list[bytes] = []
+
+    class Recorder(FakeFurby):
+        async def _write_gp(self, data):
+            written.append(("gp", data))
+
+        async def trigger_action(self, input, index, subindex, specific):
+            written.append(("action", input, index, subindex, specific))
+
+    controller = FurbyController(SETTINGS, client_factory=Recorder)
+    run(controller.play_action(9, 0, 0, 6, hold_seconds=0))
+
+    assert written == [
+        ("gp", bytes.fromhex("e000000001")),
+        ("action", 9, 0, 0, 6),
+        ("gp", bytes.fromhex("e000000000")),
+    ]

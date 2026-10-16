@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -54,6 +55,24 @@ class FurbyController:
     async def trigger_action(self, input_id: int, index: int, subindex: int, specific: int) -> None:
         """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md."""
         await self._client.trigger_action(input_id, index, subindex, specific)
+
+    async def set_group_active(self, active: bool) -> None:
+        """Turns the Furby's own behavior on or off (GeneralPlus command 0xe0, per PyFluff's protocol docs).
+
+        Triggered actions only run while this is on, so they are played inside a short on-window.
+        """
+        await self._client._write_gp(bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00]))
+
+    async def play_action(
+        self, input_id: int, index: int, subindex: int, specific: int, hold_seconds: float = 3.0
+    ) -> None:
+        """Runs one built-in action with the group on for `hold_seconds`, then turns it off again."""
+        await self.set_group_active(True)
+        try:
+            await self.trigger_action(input_id, index, subindex, specific)
+            await asyncio.sleep(hold_seconds)
+        finally:
+            await self.set_group_active(False)
 
     def sensor_events(self) -> AsyncIterator[Any]:
         """Yield raw sensor readings (touch, shake, antenna joystick) as PyFluff produces them."""

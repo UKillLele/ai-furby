@@ -10,6 +10,7 @@ from ai_furby.assistant import Assistant
 from ai_furby.audio import play, record_utterance
 from ai_furby.config import Settings
 from ai_furby.furby_controller import FurbyController
+from ai_furby.mood_actions import MOOD_ACTIONS
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
 
@@ -57,10 +58,21 @@ async def run(settings: Settings) -> None:
                 continue
             print(f"Furby: {reply}")
 
+            await _show_mood(furby, assistant.last_mood)
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
             await asyncio.to_thread(play, speech, tts.sample_rate)
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
+async def _show_mood(furby: FurbyController | None, mood: str | None) -> None:
+    """Plays the built-in action for the mood before speaking. The Furby is quiet between these moments."""
+    if furby is None or mood is None or mood not in MOOD_ACTIONS:
+        return
+    try:
+        await furby.play_action(*MOOD_ACTIONS[mood])
+    except Exception:  # an action failure should not stop the reply
+        log.warning("Could not play the %s action", mood, exc_info=True)
 
 
 async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:
