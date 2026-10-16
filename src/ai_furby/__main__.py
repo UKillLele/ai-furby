@@ -12,7 +12,7 @@ def main() -> None:
     from ai_furby.voice_loop import run
 
     logging.basicConfig(level=logging.WARNING)
-    for name in ("ai_furby.audio", "ai_furby.voice_loop"):
+    for name in ("ai_furby.audio", "ai_furby.voice_loop", "ai_furby.furby_worker"):
         logging.getLogger(name).setLevel(logging.INFO)  # which output device and mood each reply uses
     try:
         asyncio.run(run(Settings.from_env()))

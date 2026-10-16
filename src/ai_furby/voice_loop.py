@@ -99,6 +99,7 @@ async def _speak_with_movement(
         return
     # Audio takes a moment to open its stream, and Bluetooth commands take a moment to reach the Furby.
     # Let the audio start first, then start the movement, so the two line up.
+    log.info("Movement starting: %s for %.1f s", mood, seconds - MOVEMENT_DELAY_SECONDS)
     await asyncio.sleep(MOVEMENT_DELAY_SECONDS)
     await asyncio.gather(_move_with_beak(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
 
@@ -107,6 +108,7 @@ async def _move_with_beak(furby: FurbyRemote, action: tuple[int, int, int, int],
     """One full mood movement at the start of the reply, then beak movement for the rest of it."""
     try:
         first = min(ACTION_SECONDS.get(action, 2.5), seconds)
+        log.info("Mood action %s for %.1f s", action, first)
         await furby.act_for(action, first)
         if seconds > first:
             await furby.act_for(BEAK_ACTION, seconds - first)
