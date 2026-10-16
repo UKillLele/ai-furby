@@ -29,8 +29,8 @@ def is_stop_phrase(heard: str) -> bool:
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
-ANTENNA_WINDOW_SECONDS = 3.0  # antenna movements this close together count as a touch
-ANTENNA_TOUCHES_NEEDED = 1  # antenna readings needed within the window
+ANTENNA_WINDOW_SECONDS = 1.5  # antenna readings this close together count as one touch
+ANTENNA_TOUCHES_NEEDED = 2  # antenna readings needed within the window; one reading was too easy to trigger by accident
 FOLLOW_UP_SECONDS = 10.0
 WAKE_FOLLOW_UP_SECONDS = 6.0  # after the wake word, how long to wait for something to say before greeting  # after a reply, the next thing you say can come within this window without the wake word
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
