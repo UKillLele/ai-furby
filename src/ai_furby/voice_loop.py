@@ -61,8 +61,12 @@ async def run(settings: Settings) -> None:
             print(f"Furby: {reply}")
 
             await _set_antenna(furby, SPEAKING_COLOR)
-            speech = await asyncio.to_thread(tts.synthesize, reply)
-            await asyncio.to_thread(play, speech, tts.sample_rate, settings.speaker_device)
+            try:
+                speech = await asyncio.to_thread(tts.synthesize, reply)
+                await asyncio.to_thread(play, speech, tts.sample_rate, settings.speaker_device)
+            except Exception as error:  # a speaker hiccup should not end the conversation; the reply is still printed
+                log.exception("Playback failed")
+                print(f"(could not play speech: {type(error).__name__}; check the headset is connected)")
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
