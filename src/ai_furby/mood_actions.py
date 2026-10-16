@@ -4,7 +4,7 @@ from PyFluff's docs/actionlist.md. Some actions include the Furby's own voice cl
 MOOD_ACTIONS: dict[str, tuple[int, int, int, int]] = {
     "happy": (24, 4, 0, 1),  # laughing
     "excited": (9, 0, 0, 6),  # spinning noises
-    "curious": (55, 2, 17, 0),  # ear point up
+    "curious": (24, 1, 3, 0),  # flip upside down (movement, no voice when the Furby speaker is off)
     "sad": (9, 2, 0, 2),  # crying shake
     "sleepy": (9, 2, 0, 1),  # shaking yawn
     "silly": (9, 3, 0, 4),  # shake noises
