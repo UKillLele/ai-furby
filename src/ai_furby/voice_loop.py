@@ -46,6 +46,10 @@ async def run(settings: Settings) -> None:
         # Bluetooth connection fail with "Thread is configured for Windows GUI".
         from ai_furby import audio
 
+        if furby is None:
+            print("Furby: not connected (FURBY_ADDRESS is not set in this terminal), so it won't move.")
+        else:
+            print(f"Furby: connected to {settings.furby_address}")
         print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
             await _set_antenna(furby, LISTENING_COLOR)
