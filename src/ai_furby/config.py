@@ -6,8 +6,8 @@ from dataclasses import dataclass
 DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_WHISPER_MODEL = "small"
 DEFAULT_PIPER_MODEL = "models/piper/en_US-lessac-medium.onnx"
-DEFAULT_MIC = "HD Pro Webcam C920"  # part of the device name; matches the webcam mic on this PC
-DEFAULT_SPEAKER = ""  # empty means the Windows default output
+DEFAULT_MIC = "Logitech G PRO X 2"  # part of the device name; the headset mic on this PC
+DEFAULT_SPEAKER = "Logitech G PRO X 2"  # the headset output on this PC
 
 
 @dataclass(frozen=True)

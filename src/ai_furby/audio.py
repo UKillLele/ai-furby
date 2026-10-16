@@ -104,5 +104,8 @@ def play(samples: np.ndarray, sample_rate: int, device: str | int | None = None)
             raise RuntimeError(f"No output device matches {name!r}")
     if samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
-    sd.play(samples, samplerate=sample_rate, device=device)
+    # Many headsets only accept their own rate (for example 48 kHz), so convert Piper's rate to the device's rate.
+    device_rate = int(sd.query_devices(device, kind="output")["default_samplerate"])
+    samples = _resample(samples, sample_rate, device_rate)
+    sd.play(samples, samplerate=device_rate, device=device)
     sd.wait()
