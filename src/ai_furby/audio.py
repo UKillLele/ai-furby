@@ -24,7 +24,7 @@ def find_input_device(name_part: str) -> int | None:
 
 
 def record_utterance(
-    threshold: float = 0.02,
+    threshold: float = 0.1,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
