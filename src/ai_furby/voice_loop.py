@@ -19,6 +19,7 @@ STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
+MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
 SPEAKING_COLOR = (0, 0, 255)
 
 
@@ -77,11 +78,14 @@ async def _speak_with_movement(
     seconds: float,
 ) -> None:
     """Plays the reply while the Furby moves for the same length of time."""
-    speaking = asyncio.to_thread(audio.play, speech, sample_rate)
+    speaking = asyncio.create_task(asyncio.to_thread(audio.play, speech, sample_rate))
     if furby is None or mood is None or mood not in MOOD_ACTIONS:
         await speaking
         return
-    await asyncio.gather(_move(furby, MOOD_ACTIONS[mood], seconds), speaking)
+    # Audio takes a moment to open its stream, and Bluetooth commands take a moment to reach the Furby.
+    # Let the audio start first, then start the movement, so the two line up.
+    await asyncio.sleep(MOVEMENT_DELAY_SECONDS)
+    await asyncio.gather(_move(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
 
 
 async def _move(furby: FurbyController, action: tuple[int, int, int, int], seconds: float) -> None:
