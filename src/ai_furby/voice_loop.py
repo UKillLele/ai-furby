@@ -9,7 +9,7 @@ import re
 
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
-from ai_furby.furby_controller import FurbyController
+from ai_furby.furby_remote import FurbyRemote
 from ai_furby.mood_actions import ACTION_SECONDS, BEAK_ACTION, MOOD_ACTIONS
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
@@ -38,7 +38,7 @@ async def run(settings: Settings) -> None:
     async with contextlib.AsyncExitStack() as stack:
         furby = None
         if settings.furby_address:
-            furby = await stack.enter_async_context(FurbyController(settings))
+            furby = await stack.enter_async_context(FurbyRemote(settings))
 
         # Imported only after the Furby is connected: on Windows, loading sounddevice first makes the
         # Bluetooth connection fail with "Thread is configured for Windows GUI".
@@ -83,7 +83,7 @@ async def run(settings: Settings) -> None:
 
 
 async def _speak_with_movement(
-    furby: FurbyController | None,
+    furby: FurbyRemote | None,
     mood: str | None,
     audio,
     speech,
@@ -102,7 +102,7 @@ async def _speak_with_movement(
     await asyncio.gather(_move_with_beak(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
 
 
-async def _move_with_beak(furby: FurbyController, action: tuple[int, int, int, int], seconds: float) -> None:
+async def _move_with_beak(furby: FurbyRemote, action: tuple[int, int, int, int], seconds: float) -> None:
     """One full mood movement at the start of the reply, then beak movement for the rest of it."""
     try:
         first = min(ACTION_SECONDS.get(action, 2.5), seconds)
@@ -113,7 +113,7 @@ async def _move_with_beak(furby: FurbyController, action: tuple[int, int, int, i
         log.warning("Could not play the movement", exc_info=True)
 
 
-async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:
+async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:
     if furby is None:
         return
     try:
