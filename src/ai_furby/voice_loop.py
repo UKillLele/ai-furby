@@ -13,6 +13,7 @@ from ai_furby.antenna_touch import is_input
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
+from ai_furby.memory import FactStore
 from ai_furby.mood_actions import ACTION_SECONDS, MOOD_ACTIONS, pick_greeting, pick_mouth_action
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
@@ -20,6 +21,12 @@ from ai_furby.text_to_speech import TextToSpeech
 log = logging.getLogger(__name__)
 
 STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
+
+
+def remembered_fact(heard: str) -> str | None:
+    """"Remember that my dog is Max" -> "my dog is Max"; anything else returns None."""
+    match = re.match(r"\s*(?:please\s+)?remember\s+that\s+(.+)", heard, re.IGNORECASE)
+    return match.group(1).strip(" .!?") if match else None
 
 
 def is_stop_phrase(heard: str) -> bool:
@@ -43,7 +50,8 @@ THINKING_COLOR = (255, 160, 0)  # amber while Claude is working on a reply
 async def run(settings: Settings) -> None:
     stt = SpeechToText(settings)
     tts = TextToSpeech(settings)
-    assistant = Assistant(settings)
+    facts = FactStore(settings.memory_path)
+    assistant = Assistant(settings, facts=facts)
 
     async with contextlib.AsyncExitStack() as stack:
         furby = None
@@ -106,6 +114,11 @@ async def run(settings: Settings) -> None:
                 conversing = False
                 continue
             print(f"You: {heard}")
+            fact = remembered_fact(heard)
+            if fact:
+                facts.add(fact)
+                print(f"(remembered: {fact})")
+
             if is_stop_phrase(heard):
                 print("Furby: Bye for now!")
                 await _say_goodbye(furby, tts, audio, settings)

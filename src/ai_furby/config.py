@@ -22,6 +22,7 @@ class Settings:
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
     wake_word_enabled: bool = True
+    memory_path: str = "data/memory.db"
     wake_threshold: float = 0.5
     mic_threshold: float = 0.01  # floor for quiet rooms; speech also has to be well above the measured room noise
 
@@ -38,6 +39,7 @@ class Settings:
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
             wake_word_enabled=os.environ.get("WAKE_WORD", "1") != "0",
+            memory_path=os.environ.get("MEMORY_PATH") or "data/memory.db",
             wake_threshold=float(os.environ.get("WAKE_THRESHOLD", "0.5")),
             mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.01")),
         )

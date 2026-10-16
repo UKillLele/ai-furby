@@ -34,7 +34,7 @@ def split_mood(raw: str) -> tuple[str, str | None]:
 class Assistant:
     """Wraps the Anthropic client. `client` can be injected so tests run without network access."""
 
-    def __init__(self, settings: Settings, client: Any | None = None) -> None:
+    def __init__(self, settings: Settings, client: Any | None = None, facts: Any | None = None) -> None:
         self._model = settings.claude_model
         if client is None:
             import os
@@ -48,6 +48,7 @@ class Assistant:
 
             client = anthropic.Anthropic()
         self._client = client
+        self._facts = facts  # a FactStore, or None when nothing is remembered
         self._history: list[dict[str, str]] = []
         self.last_mood: str | None = None
 
@@ -56,7 +57,7 @@ class Assistant:
         response = self._client.messages.create(
             model=self._model,
             max_tokens=300,
-            system=PERSONA,
+            system=self._system_prompt(),
             messages=self._history[-MAX_HISTORY_MESSAGES:],
             output_config={"effort": "low"},
         )
@@ -64,6 +65,13 @@ class Assistant:
         text, self.last_mood = split_mood(raw)
         self._history.append({"role": "assistant", "content": raw})
         return text
+
+    def _system_prompt(self) -> str:
+        facts = self._facts.all() if self._facts is not None else []
+        if not facts:
+            return PERSONA
+        listed = "\n".join(f"- {fact}" for fact in facts)
+        return f"{PERSONA}\n\nThings the user asked you to remember:\n{listed}"
 
     def reset(self) -> None:
         self._history.clear()
