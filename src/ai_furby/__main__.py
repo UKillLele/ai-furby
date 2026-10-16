@@ -9,7 +9,6 @@ from ai_furby.voice_loop import run
 
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger("ai_furby.audio").setLevel(logging.INFO)
     try:
         asyncio.run(run(Settings.from_env()))
     except KeyboardInterrupt:

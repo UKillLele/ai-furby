@@ -55,13 +55,6 @@ class FurbyController:
         """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md."""
         await self._client.trigger_action(input_id, index, subindex, specific)
 
-    async def set_group_active(self, active: bool) -> None:
-        """Turn the Furby's autonomous behavior on or off (GeneralPlus command 0xe0, per PyFluff's protocol docs).
-
-        While inactive, the Furby stops its own idle actions and reactions, and ignores triggered actions.
-        """
-        await self._client._write_gp(bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00]))
-
     def sensor_events(self) -> AsyncIterator[Any]:
         """Yield raw sensor readings (touch, shake, antenna joystick) as PyFluff produces them."""
         return self._client.sensor_stream()

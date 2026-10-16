@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import sounddevice as sd
-
-log = logging.getLogger(__name__)
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
@@ -15,25 +11,20 @@ MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 
 
 def find_input_device(name_part: str) -> int | None:
-    return find_device(name_part, "input")
+    """Returns the index of an input device whose name contains `name_part`.
 
-
-def find_device(name_part: str, kind: str) -> int | None:
-    """Returns the index of an `input` or `output` device whose name contains `name_part`.
-
-    Windows lists the same device under several host APIs, so WASAPI is preferred when it is available.
+    Windows lists the same mic under several host APIs, so WASAPI is preferred when it is available.
     """
-    channel_key = "max_input_channels" if kind == "input" else "max_output_channels"
     matches = []
     for index, device in enumerate(sd.query_devices()):
-        if device[channel_key] > 0 and name_part.lower() in device["name"].lower():
+        if device["max_input_channels"] > 0 and name_part.lower() in device["name"].lower():
             host_api = sd.query_hostapis(device["hostapi"])["name"]
             matches.append((0 if "WASAPI" in host_api else 1, index))
     return min(matches)[1] if matches else None
 
 
 def record_utterance(
-    threshold: float = 0.1,
+    threshold: float = 0.02,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
@@ -99,19 +90,9 @@ def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     return np.interp(new_positions, old_positions, samples).astype(np.float32)
 
 
-def play(samples: np.ndarray, sample_rate: int, device: str | int | None = None) -> None:
-    """Plays int16 or float32 mono samples on `device` (name fragment or index) and waits until they finish."""
-    if isinstance(device, str):
-        name = device
-        device = None if not name else find_device(name, "output")
-        if name and device is None:
-            raise RuntimeError(f"No output device matches {name!r}")
+def play(samples: np.ndarray, sample_rate: int) -> None:
+    """Plays int16 or float32 mono samples and waits until they finish."""
     if samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
-    # Many headsets only accept their own rate (for example 48 kHz), so convert Piper's rate to the device's rate.
-    info = sd.query_devices(device, kind="output")
-    device_rate = int(info["default_samplerate"])
-    log.info("Playing on %s [%s] at %d Hz", info["name"], sd.query_hostapis(info["hostapi"])["name"], device_rate)
-    samples = _resample(samples, sample_rate, device_rate)
-    sd.play(samples, samplerate=device_rate, device=device)
+    sd.play(samples, samplerate=sample_rate)
     sd.wait()

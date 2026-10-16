@@ -63,17 +63,3 @@ def test_trigger_action_passes_ids_through():
     controller = FurbyController(SETTINGS, client_factory=lambda: fake)
     run(controller.trigger_action(1, 2, 3, 4))
     assert ("action", 1, 2, 3, 4) in fake.calls
-
-
-def test_set_group_active_writes_group_command():
-    written: list[bytes] = []
-
-    class Recorder(FakeFurby):
-        async def _write_gp(self, data):
-            written.append(data)
-
-    controller = FurbyController(SETTINGS, client_factory=Recorder)
-    run(controller.set_group_active(False))
-    run(controller.set_group_active(True))
-
-    assert written == [bytes.fromhex("e000000000"), bytes.fromhex("e000000001")]

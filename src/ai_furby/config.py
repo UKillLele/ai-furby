@@ -6,8 +6,7 @@ from dataclasses import dataclass
 DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_WHISPER_MODEL = "small"
 DEFAULT_PIPER_MODEL = "models/piper/en_US-lessac-medium.onnx"
-DEFAULT_MIC = "HD Pro Webcam C920"  # part of the device name; the webcam mic on this PC
-DEFAULT_SPEAKER = "Speakers (Realtek"  # the PC speakers, so playback avoids the headset call mode
+DEFAULT_MIC = "HD Pro Webcam C920"  # part of the device name; matches the webcam mic on this PC
 
 
 @dataclass(frozen=True)
@@ -20,8 +19,7 @@ class Settings:
     whisper_compute_type: str = "float16"
     piper_model_path: str = DEFAULT_PIPER_MODEL
     mic_device: str = DEFAULT_MIC
-    speaker_device: str = DEFAULT_SPEAKER
-    mic_threshold: float = 0.1  # speech loudness (RMS per 0.1 s); raise if noise triggers it, lower if you are not heard
+    mic_threshold: float = 0.02  # speech loudness (RMS per 0.1 s); raise if noise triggers it, lower if you are not heard
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -34,6 +32,5 @@ class Settings:
             whisper_compute_type=os.environ.get("WHISPER_COMPUTE_TYPE") or "float16",
             piper_model_path=os.environ.get("PIPER_MODEL") or DEFAULT_PIPER_MODEL,
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
-            speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
-            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.1")),
+            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.02")),
         )
