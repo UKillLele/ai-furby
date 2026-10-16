@@ -15,8 +15,7 @@ def main() -> None:
     try:
         asyncio.run(run(Settings.from_env()))
     except KeyboardInterrupt:
-        print("
-Stopped.")
+        print("\nStopped.")
 
 
 if __name__ == "__main__":
