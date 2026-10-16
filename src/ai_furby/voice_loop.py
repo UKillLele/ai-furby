@@ -289,10 +289,25 @@ async def _greet(furby, tts, audio, settings: Settings) -> None:
     print(f"Furby: {phrase}")
     try:
         speech = await asyncio.to_thread(tts.synthesize, phrase)
-        await asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device)
+        seconds = len(speech) / tts.sample_rate
+        speaking = asyncio.create_task(asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device))
+        if furby is not None:
+            # The greeting always moves the mouth, starting once the audio is going.
+            await asyncio.sleep(MOVEMENT_DELAY_SECONDS)
+            await asyncio.gather(_mouth_for(furby, seconds - MOVEMENT_DELAY_SECONDS), speaking)
+        else:
+            await speaking
     except Exception:  # a speaker problem should not stop the conversation
         log.warning("Could not play the greeting", exc_info=True)
     await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
+async def _mouth_for(furby: FurbyRemote, seconds: float) -> None:
+    """Moves the mouth with one of the approved mouth actions for about `seconds`."""
+    try:
+        await furby.act_for(pick_mouth_action(), max(seconds, 0.5))
+    except Exception:  # a movement failure should not stop the greeting
+        log.warning("Could not move the mouth", exc_info=True)
 
 
 async def _watch_sleep_mask(furby: FurbyRemote, mask_worn: asyncio.Event) -> None:
