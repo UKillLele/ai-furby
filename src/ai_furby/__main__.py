@@ -12,7 +12,8 @@ def main() -> None:
     from ai_furby.voice_loop import run
 
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger("ai_furby.audio").setLevel(logging.INFO)  # shows which output device each reply uses
+    for name in ("ai_furby.audio", "ai_furby.voice_loop"):
+        logging.getLogger(name).setLevel(logging.INFO)  # which output device and mood each reply uses
     try:
         asyncio.run(run(Settings.from_env()))
     except KeyboardInterrupt:

@@ -68,6 +68,7 @@ async def run(settings: Settings) -> None:
                 print(f"Furby: (could not think of a reply: {type(error).__name__})")
                 continue
             print(f"Furby: {reply}")
+            log.info("Mood: %s", assistant.last_mood)
 
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
