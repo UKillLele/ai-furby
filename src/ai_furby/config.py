@@ -19,7 +19,7 @@ class Settings:
     whisper_compute_type: str = "float16"
     piper_model_path: str = DEFAULT_PIPER_MODEL
     mic_device: str = DEFAULT_MIC
-    mic_threshold: float = 0.1  # speech loudness (RMS per 0.1 s); raise if noise triggers it, lower if you are not heard
+    mic_threshold: float = 0.01  # floor for quiet rooms; speech also has to be well above the measured room noise
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,5 +32,5 @@ class Settings:
             whisper_compute_type=os.environ.get("WHISPER_COMPUTE_TYPE") or "float16",
             piper_model_path=os.environ.get("PIPER_MODEL") or DEFAULT_PIPER_MODEL,
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
-            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.1")),
+            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.01")),
         )

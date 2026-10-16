@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections import deque
+
 import numpy as np
 import sounddevice as sd
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
+NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
+NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 
 
@@ -24,7 +28,7 @@ def find_input_device(name_part: str) -> int | None:
 
 
 def record_utterance(
-    threshold: float = 0.1,
+    threshold: float = 0.01,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
@@ -47,6 +51,7 @@ def record_utterance(
     wait_blocks = int(wait_seconds / BLOCK_SECONDS)
 
     captured: list[np.ndarray] = []
+    recent_levels: deque[float] = deque(maxlen=NOISE_WINDOW_BLOCKS)
     pending: list[np.ndarray] = []  # loud blocks that may be the start of speech, not yet confirmed
     speaking = False
     silent_run = 0
@@ -55,7 +60,11 @@ def record_utterance(
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
             samples = data[:, 0].copy()
-            loud = float(np.sqrt(np.mean(np.square(samples)))) > threshold
+            level = float(np.sqrt(np.mean(np.square(samples))))
+            if not speaking:
+                recent_levels.append(level)
+            # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
+            loud = level > _adaptive_threshold(threshold, recent_levels)
 
             if not speaking:
                 if index >= wait_blocks:
@@ -79,6 +88,14 @@ def record_utterance(
     if not captured:
         return np.zeros(0, dtype=np.float32)
     return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
+
+
+def _adaptive_threshold(minimum: float, recent_levels: deque[float]) -> float:
+    """Speech must be well above the recent quiet level. `minimum` is the floor for very quiet rooms."""
+    if len(recent_levels) < NOISE_WINDOW_BLOCKS // 2:
+        return minimum
+    noise = float(np.median(recent_levels))
+    return max(minimum, noise * NOISE_MULTIPLIER)
 
 
 def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
