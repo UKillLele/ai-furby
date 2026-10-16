@@ -13,7 +13,7 @@ from ai_furby.antenna_touch import is_antenna_movement
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
-from ai_furby.mood_actions import ACTION_SECONDS, MOOD_ACTIONS, pick_mouth_action
+from ai_furby.mood_actions import ACTION_SECONDS, MOOD_ACTIONS, pick_greeting, pick_mouth_action
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
 
@@ -30,8 +30,9 @@ LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
 ANTENNA_WINDOW_SECONDS = 3.0  # antenna movements this close together count as a touch
-ANTENNA_TOUCHES_NEEDED = 2  # readings needed within the window
-FOLLOW_UP_SECONDS = 10.0  # after a reply, the next thing you say can come within this window without the wake word
+ANTENNA_TOUCHES_NEEDED = 1  # antenna readings needed within the window
+FOLLOW_UP_SECONDS = 10.0
+WAKE_FOLLOW_UP_SECONDS = 6.0  # after the wake word, how long to wait for something to say before greeting  # after a reply, the next thing you say can come within this window without the wake word
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
@@ -66,18 +67,31 @@ async def run(settings: Settings) -> None:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
         while True:
+            woke_by = None  # "voice" or "antenna" right after a wake; None otherwise
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
-                await _wait_for_wake_word_or_antenna(wake, furby)
-                print("(woken)")
+                woke_by = await _wait_for_wake_word_or_antenna(wake, furby)
+                print(f"(woken by {woke_by})")
                 await _wake_up(furby)
+                if woke_by == "antenna":
+                    await _greet(furby, tts, audio, settings)
+                    conversing = True
+                    woke_by = None  # the greeting already answered the wake
             await _set_antenna(furby, LISTENING_COLOR)
             # During a conversation, wait up to FOLLOW_UP_SECONDS for the next thing you say; silence ends it.
-            wait = FOLLOW_UP_SECONDS if conversing else 30.0
+            if woke_by == "voice":
+                wait = WAKE_FOLLOW_UP_SECONDS
+            else:
+                wait = FOLLOW_UP_SECONDS if conversing else 30.0
             utterance = await asyncio.to_thread(
                 audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device, wait_seconds=wait
             )
             if utterance.size == 0:
+                if woke_by == "voice":
+                    # The wake word came with nothing after it: greet, then keep the conversation open.
+                    await _greet(furby, tts, audio, settings)
+                    conversing = True
+                    continue
                 if conversing:
                     print("(quiet for a while; say the wake word to talk again)")
                 conversing = False
@@ -173,17 +187,30 @@ async def _go_to_sleep(furby: FurbyRemote | None) -> None:
         log.warning("Could not put the Furby to sleep", exc_info=True)
 
 
-async def _wait_for_wake_word_or_antenna(wake, furby: FurbyRemote | None) -> None:
-    """Returns when the wake word is heard or the antenna is moved, whichever comes first."""
+async def _wait_for_wake_word_or_antenna(wake, furby: FurbyRemote | None) -> str:
+    """Returns "voice" when the wake word is heard or "antenna" when the antenna is touched, whichever comes first."""
     stop = threading.Event()
     voice = asyncio.create_task(asyncio.to_thread(wake.wait_for_wake, None, stop))
     touch = asyncio.create_task(_antenna_touched(furby))
     try:
-        await asyncio.wait({voice, touch}, return_when=asyncio.FIRST_COMPLETED)
+        done, _pending = await asyncio.wait({voice, touch}, return_when=asyncio.FIRST_COMPLETED)
     finally:
         stop.set()
         touch.cancel()
         await asyncio.gather(voice, touch, return_exceptions=True)
+    return "voice" if voice in done else "antenna"
+
+
+async def _greet(furby, tts, audio, settings: Settings) -> None:
+    """Furby asks what it can do, out loud."""
+    phrase = pick_greeting()
+    print(f"Furby: {phrase}")
+    try:
+        speech = await asyncio.to_thread(tts.synthesize, phrase)
+        await asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device)
+    except Exception:  # a speaker problem should not stop the conversation
+        log.warning("Could not play the greeting", exc_info=True)
+    await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
 async def _antenna_touched(furby: FurbyRemote | None) -> None:

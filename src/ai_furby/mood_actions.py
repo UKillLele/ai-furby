@@ -53,3 +53,17 @@ def pick_mouth_action() -> tuple[int, int, int, int]:
     _last_mouth_action = random.choice(choices)
     return _last_mouth_action
 
+
+
+GREETINGS = (
+    "What's up?",
+    "What can I help you with?",
+    "Hey, what's up?",
+    "What do you need?",
+    "I'm listening. What's up?",
+)
+
+
+def pick_greeting() -> str:
+    """A short "what's up" line for when Furby is woken without a question."""
+    return random.choice(GREETINGS)
