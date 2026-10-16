@@ -53,8 +53,3 @@ def pick_mouth_action() -> tuple[int, int, int, int]:
     _last_mouth_action = random.choice(choices)
     return _last_mouth_action
 
-# Eyelids. The yawn closes them and they stay closed; stars in eyes opens them again.
-EYES_CLOSE = (12, 2, 0, 2)  # yawn (closes the eyelids), about 7 s
-EYES_CLOSE_SECONDS = 7.02
-EYES_OPEN = (40, 0, 1, 4)  # stars in eyes (reopens the eyelids), about 3 s
-EYES_OPEN_SECONDS = 3.0
