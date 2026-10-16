@@ -10,7 +10,15 @@ import re
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
-from ai_furby.mood_actions import ACTION_SECONDS, MOOD_ACTIONS, pick_mouth_action
+from ai_furby.mood_actions import (
+    ACTION_SECONDS,
+    EYES_CLOSE,
+    EYES_CLOSE_SECONDS,
+    EYES_OPEN,
+    EYES_OPEN_SECONDS,
+    MOOD_ACTIONS,
+    pick_mouth_action,
+)
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
 
@@ -163,8 +171,9 @@ async def _go_to_sleep(furby: FurbyRemote | None) -> None:
         return
     await _set_antenna(furby, (0, 0, 0))
     try:
+        # Close the eyelids first (the yawn), then turn the eyes' light off, then turn the Furby's own behavior off.
+        await furby.act_for(EYES_CLOSE, EYES_CLOSE_SECONDS)
         await furby.set_backlight(False)
-        await furby.set_group_active(False)
     except Exception:
         log.warning("Could not put the Furby to sleep", exc_info=True)
 
@@ -174,6 +183,7 @@ async def _wake_up(furby: FurbyRemote | None) -> None:
         return
     try:
         await furby.set_backlight(True)
+        await furby.act_for(EYES_OPEN, EYES_OPEN_SECONDS)  # stars in eyes reopens the eyelids
     except Exception:
         log.warning("Could not turn the Furby's eyes on", exc_info=True)
 
