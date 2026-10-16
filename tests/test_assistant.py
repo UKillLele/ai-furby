@@ -82,7 +82,7 @@ def test_split_mood_separates_tag_from_spoken_text():
 def test_split_mood_ignores_unknown_or_missing_mood():
     from ai_furby.assistant import split_mood
 
-    assert split_mood("Hi there.\nMOOD: grumpy") == ("Hi there.\nMOOD: grumpy", None)
+    assert split_mood("Hi there.\nMOOD: grumpy") == ("Hi there.", None)
     assert split_mood("Just talking.") == ("Just talking.", None)
 
 
