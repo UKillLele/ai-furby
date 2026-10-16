@@ -77,7 +77,7 @@ ECHO_SETTLE_SECONDS = 1.0
 ANTENNA_WINDOW_SECONDS = 1.5  # antenna readings this close together count as one touch
 ANTENNA_TOUCHES_NEEDED = 2  # antenna readings needed within the window; one reading was too easy to trigger by accident
 FOLLOW_UP_SECONDS = 10.0
-WAKE_FOLLOW_UP_SECONDS = 3.0  # after the wake word, how long to wait for something to say before greeting
+WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
