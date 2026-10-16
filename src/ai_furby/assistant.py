@@ -11,6 +11,9 @@ PERSONA = (
     "You are Furby, a small, cheerful companion that lives on a desk. "
     "Reply in one to three short sentences, because your replies are spoken aloud. "
     "Never use markdown, lists, or emoji. Be warm, a little silly, and honest. "
+    "If the user tells you a lasting fact about themselves (their name, pets, favorites, people they care about), "
+    "add a line FACT: followed by a short topic key, a vertical bar, and the fact, such as FACT: dog_name | Max. "
+    "Only add one when the user said it directly, and never for things other people said, questions, or passing remarks. "
     "After your reply, on its own final line, write MOOD: followed by one word for how you feel: "
     "happy, excited, curious, sad, sleepy, or silly."
 )
@@ -20,6 +23,23 @@ MOODS = ("happy", "excited", "curious", "sad", "sleepy", "silly")
 MAX_HISTORY_MESSAGES = 20  # keep the last N turns so replies stay fast and cheap
 
 _MOOD_LINE = re.compile(r"\s*MOOD:\s*([A-Za-z]+)\s*$", re.IGNORECASE)
+_FACT_LINE = re.compile(r"\s*FACT:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def split_fact(raw: str) -> tuple[str, tuple[str, str] | None]:
+    """Separates a FACT line from the reply. Returns (key, text) for the fact, or None."""
+    match = _FACT_LINE.search(raw)
+    if not match:
+        return raw, None
+    body = match.group(1)
+    rest = raw[: match.start()] + raw[match.end():]
+    if "|" in body:
+        key, text = body.split("|", 1)
+    else:
+        key, text = body, body
+    if not key.strip() or not text.strip():
+        return rest, None
+    return rest.strip(), (key.strip(), text.strip())
 
 
 def split_mood(raw: str) -> tuple[str, str | None]:
@@ -51,6 +71,7 @@ class Assistant:
         self._facts = facts  # a FactStore, or None when nothing is remembered
         self._history: list[dict[str, str]] = []
         self.last_mood: str | None = None
+        self.last_fact: tuple[str, str] | None = None
 
     def reply(self, user_text: str) -> str:
         self._history.append({"role": "user", "content": user_text})
@@ -62,6 +83,7 @@ class Assistant:
             output_config={"effort": "low"},
         )
         raw = "".join(block.text for block in response.content if block.type == "text").strip()
+        raw, self.last_fact = split_fact(raw)
         text, self.last_mood = split_mood(raw)
         self._history.append({"role": "assistant", "content": raw})
         return text

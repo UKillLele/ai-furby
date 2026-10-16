@@ -23,6 +23,44 @@ log = logging.getLogger(__name__)
 STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
 
 
+def memory_command(heard: str) -> tuple[str, str] | None:
+    """Recognizes "what do you remember", "forget that", and "forget <words>". Returns (command, words) or None."""
+    text = heard.lower().strip(" .!?")
+    if re.fullmatch(r"(what do you remember|what do you know about me|what have i told you)", text):
+        return ("list", "")
+    if text in ("forget that", "forget that last thing", "never mind that"):
+        return ("forget_last", "")
+    match = re.fullmatch(r"forget (?:about |that )?(.+)", text)
+    if match:
+        return ("forget", match.group(1))
+    return None
+
+
+def _run_memory_command(command: tuple[str, str], facts: FactStore, heard: str) -> str:
+    kind, words = command
+    if kind == "list":
+        known = facts.all()
+        if not known:
+            return "I don't remember anything about you yet."
+        return "Here's what I remember: " + "; ".join(known) + "."
+    if kind == "forget_last":
+        removed = facts.forget_last()
+        return f"Okay, I forgot: {removed}." if removed else "There's nothing new for me to forget."
+    removed_count = facts.forget_matching(words)
+    if removed_count:
+        return f"Okay, I forgot {removed_count} thing{'s' if removed_count != 1 else ''} about {words}."
+    return f"I don't have anything about {words} to forget."
+
+
+async def _say(text: str, tts, audio, settings: Settings) -> None:
+    try:
+        speech = await asyncio.to_thread(tts.synthesize, text)
+        await asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device)
+    except Exception:  # a speaker problem should not stop the conversation
+        log.warning("Could not play the reply", exc_info=True)
+    await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
 def remembered_fact(heard: str) -> str | None:
     """"Remember that my dog is Max" -> "my dog is Max"; anything else returns None."""
     match = re.match(r"\s*(?:please\s+)?remember\s+that\s+(.+)", heard, re.IGNORECASE)
@@ -114,9 +152,16 @@ async def run(settings: Settings) -> None:
                 conversing = False
                 continue
             print(f"You: {heard}")
+            command = memory_command(heard)
+            if command is not None:
+                reply_text = _run_memory_command(command, facts, heard)
+                print(f"Furby: {reply_text}")
+                await _say(reply_text, tts, audio, settings)
+                continue
+
             fact = remembered_fact(heard)
             if fact:
-                facts.add(fact)
+                facts.save(fact, fact)
                 print(f"(remembered: {fact})")
 
             if is_stop_phrase(heard):
@@ -130,6 +175,10 @@ async def run(settings: Settings) -> None:
             await _set_antenna(furby, THINKING_COLOR)  # lit only while the reply is being worked out
             try:
                 reply = await asyncio.to_thread(assistant.reply, heard)
+                if assistant.last_fact is not None:
+                    key, text = assistant.last_fact
+                    facts.save(key, text)
+                    print(f"(learned: {text})")
             except Exception as error:  # a failed API call should not end the conversation
                 log.exception("Claude request failed")
                 print(f"Furby: (could not think of a reply: {type(error).__name__})")
