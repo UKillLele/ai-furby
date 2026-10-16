@@ -27,6 +27,7 @@ ACTION_SECONDS: dict[tuple[int, int, int, int], float] = {
     (26, 0, 0, 3): 2.92,  # baby talk (mouth)
     (26, 0, 0, 4): 2.97,  # more baby talk (mouth)
     (8, 1, 0, 6): 3.22,  # talkin' bout (mouth)
+    (30, 3, 0, 0): 12.19,  # put to sleep (speaking)
 }
 
 # Mouth actions for the rest of a reply, chosen by ear. Each one moves the mouth; they have a brief
@@ -39,6 +40,7 @@ MOUTH_ACTIONS: list[tuple[int, int, int, int]] = [
     (8, 1, 0, 7),  # oo-nye talking
     (26, 0, 0, 2),  # mouth full mumbling
     (24, 2, 1, 5),  # silly singing
+    (30, 3, 0, 0),  # put to sleep (speaking; does not close the eyelids)
 ]
 
 _last_mouth_action: tuple[int, int, int, int] | None = None
