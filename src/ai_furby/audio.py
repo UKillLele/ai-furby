@@ -111,5 +111,14 @@ def play(samples: np.ndarray, sample_rate: int) -> None:
     """Plays int16 or float32 mono samples and waits until they finish."""
     if samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
-    sd.play(samples, samplerate=sample_rate)
+    # Convert to the output device's own rate ourselves, so Windows doesn't resample in the middle of playback.
+    device_rate = int(sd.query_devices(kind="output")["default_samplerate"])
+    if device_rate != sample_rate:
+        from math import gcd
+
+        from scipy.signal import resample_poly
+
+        divisor = gcd(device_rate, sample_rate)
+        samples = resample_poly(samples, device_rate // divisor, sample_rate // divisor).astype(np.float32)
+    sd.play(samples, samplerate=device_rate)
     sd.wait()
