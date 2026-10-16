@@ -10,7 +10,7 @@ import re
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
-from ai_furby.mood_actions import ACTION_SECONDS, BEAK_ACTION, MOOD_ACTIONS
+from ai_furby.mood_actions import ACTION_SECONDS, MOOD_ACTIONS, pick_mouth_action
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
 
@@ -118,7 +118,7 @@ async def _move_with_beak(furby: FurbyRemote, action: tuple[int, int, int, int],
         log.info("Mood action %s for %.1f s", action, first)
         await furby.act_for(action, first)
         if seconds > first:
-            await furby.act_for(BEAK_ACTION, seconds - first)
+            await furby.act_for(pick_mouth_action(), seconds - first)
     except Exception:  # an action failure should not stop the reply
         log.warning("Could not play the movement", exc_info=True)
 
