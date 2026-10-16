@@ -148,7 +148,7 @@ def play(samples: np.ndarray, sample_rate: int, device: str | None = None) -> No
     except sd.PortAudioError:
         # Bluetooth audio devices can appear or change while the program runs, and PortAudio keeps the old list.
         # Refresh the device list once and try again.
-        log.warning("Playback failed; refreshing audio devices and retrying", exc_info=True)
+        log.info("First playback attempt failed; retrying once")
         sd._terminate()
         sd._initialize()
         output = find_device(device, "output") if device else None
