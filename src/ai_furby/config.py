@@ -21,7 +21,7 @@ class Settings:
     piper_model_path: str = DEFAULT_PIPER_MODEL
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
-    mic_threshold: float = 0.02  # speech loudness (RMS per 0.1 s); raise if noise triggers it, lower if you are not heard
+    mic_threshold: float = 0.1  # speech loudness (RMS per 0.1 s); raise if noise triggers it, lower if you are not heard
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,5 +35,5 @@ class Settings:
             piper_model_path=os.environ.get("PIPER_MODEL") or DEFAULT_PIPER_MODEL,
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
-            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.02")),
+            mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.1")),
         )
