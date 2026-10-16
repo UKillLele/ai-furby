@@ -62,7 +62,7 @@ async def run(settings: Settings) -> None:
 
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
-            await asyncio.to_thread(play, speech, tts.sample_rate)
+            await asyncio.to_thread(play, speech, tts.sample_rate, settings.speaker_device)
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
