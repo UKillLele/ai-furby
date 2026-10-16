@@ -9,6 +9,8 @@ import sounddevice as sd
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
+SILENCE_LEVEL = 1e-4  # samples quieter than this count as digital silence
+NOISE_FLOOR = 0.002  # faint noise (about -54 dB) used in pauses instead of digital silence
 MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
@@ -125,5 +127,10 @@ def play(samples: np.ndarray, sample_rate: int) -> None:
     peak = float(np.max(np.abs(samples))) if samples.size else 0.0
     if peak > MAX_PEAK:
         samples = samples * (MAX_PEAK / peak)
+    # Bluetooth headsets can power down during digital silence, which clips the start of the next phrase.
+    # Keep a faint noise floor in the pauses so the stream never goes fully quiet.
+    rng = np.random.default_rng()
+    quiet = np.abs(samples) < SILENCE_LEVEL
+    samples = np.where(quiet, rng.uniform(-NOISE_FLOOR, NOISE_FLOOR, size=samples.shape).astype(np.float32), samples)
     sd.play(samples, samplerate=device_rate)
     sd.wait()
