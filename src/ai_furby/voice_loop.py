@@ -37,6 +37,7 @@ async def run(settings: Settings) -> None:
 
         print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
+            await _keep_furby_quiet(furby)
             await _set_antenna(furby, LISTENING_COLOR)
             audio = await asyncio.to_thread(
                 record_utterance, threshold=settings.mic_threshold, device=settings.mic_device
@@ -63,11 +64,31 @@ async def run(settings: Settings) -> None:
             await _set_antenna(furby, SPEAKING_COLOR)
             try:
                 speech = await asyncio.to_thread(tts.synthesize, reply)
-                await asyncio.to_thread(play, speech, tts.sample_rate, settings.speaker_device)
+                await _play_with_retry(speech, tts.sample_rate, settings.speaker_device)
             except Exception as error:  # a speaker hiccup should not end the conversation; the reply is still printed
                 log.exception("Playback failed")
                 print(f"(could not play speech: {type(error).__name__}; check the headset is connected)")
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
+async def _keep_furby_quiet(furby: FurbyController | None) -> None:
+    """The Furby seems to resume its own behavior over time, so re-assert the group-off command each turn."""
+    if furby is None:
+        return
+    try:
+        await furby.set_group_active(False)
+    except Exception:
+        log.warning("Could not keep the Furby quiet", exc_info=True)
+
+
+async def _play_with_retry(speech, sample_rate: int, speaker: str) -> None:
+    """Headsets can briefly refuse playback right after the mic has been in use, so try once more."""
+    try:
+        await asyncio.to_thread(play, speech, sample_rate, speaker)
+    except Exception:
+        log.warning("Playback failed once; retrying", exc_info=True)
+        await asyncio.sleep(1.5)
+        await asyncio.to_thread(play, speech, sample_rate, speaker)
 
 
 async def _restore_autonomy(furby: FurbyController) -> None:
