@@ -76,6 +76,10 @@ async def run(settings: Settings) -> None:
             print(f"You: {heard}")
             if is_stop_phrase(heard):
                 print("Furby: Bye for now!")
+                await _say_goodbye(furby, tts, audio, settings)
+                if settings.wake_word_enabled:
+                    await _go_to_sleep(furby)
+                    continue  # back to waiting for the wake word
                 break
 
             try:
@@ -132,6 +136,27 @@ async def _move_with_beak(furby: FurbyRemote, action: tuple[int, int, int, int],
             await furby.act_for(pick_mouth_action(), seconds - first)
     except Exception:  # an action failure should not stop the reply
         log.warning("Could not play the movement", exc_info=True)
+
+
+async def _say_goodbye(furby, tts, audio, settings: Settings) -> None:
+    """Furby says goodbye out loud, then the speech settles before the mic opens again."""
+    try:
+        speech = await asyncio.to_thread(tts.synthesize, "Bye for now!")
+        await asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device)
+    except Exception:  # a speaker problem should not stop the goodbye
+        log.warning("Could not play the goodbye", exc_info=True)
+    await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
+async def _go_to_sleep(furby: FurbyRemote | None) -> None:
+    """Sleep mode: the Furby's antenna goes dark and its own behavior is turned off until the wake word."""
+    if furby is None:
+        return
+    await _set_antenna(furby, (0, 0, 0))
+    try:
+        await furby.set_group_active(False)
+    except Exception:
+        log.warning("Could not put the Furby to sleep", exc_info=True)
 
 
 async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:
