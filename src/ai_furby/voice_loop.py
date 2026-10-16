@@ -37,6 +37,7 @@ WAKE_FOLLOW_UP_SECONDS = 6.0  # after the wake word, how long to wait for someth
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
 SPEAKING_COLOR = (0, 0, 255)
+THINKING_COLOR = (255, 160, 0)  # amber while Claude is working on a reply
 
 
 async def run(settings: Settings) -> None:
@@ -110,11 +111,13 @@ async def run(settings: Settings) -> None:
                     continue  # back to waiting for the wake word
                 break
 
+            await _set_antenna(furby, THINKING_COLOR)  # lit only while the reply is being worked out
             try:
                 reply = await asyncio.to_thread(assistant.reply, heard)
             except Exception as error:  # a failed API call should not end the conversation
                 log.exception("Claude request failed")
                 print(f"Furby: (could not think of a reply: {type(error).__name__})")
+                await _set_antenna(furby, (0, 0, 0))
                 continue
             print(f"Furby: {reply}")
             log.info("Mood: %s", assistant.last_mood)
