@@ -65,7 +65,11 @@ async def run(settings: Settings) -> None:
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
             seconds = len(speech) / tts.sample_rate
-            await _speak_with_movement(furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds)
+            try:
+                await _speak_with_movement(furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds)
+            except Exception as error:  # a speaker problem should not end the conversation
+                log.exception("Playback failed")
+                print(f"(could not play speech: {type(error).__name__}; check the speakers)")
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
