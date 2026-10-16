@@ -31,6 +31,9 @@ async def run(settings: Settings) -> None:
         furby = None
         if settings.furby_address:
             furby = await stack.enter_async_context(FurbyController(settings))
+            # Stop the Furby's own idle behavior so it only acts on this assistant's commands.
+            await furby.set_group_active(False)
+            stack.push_async_callback(_restore_autonomy, furby)
 
         print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
@@ -61,6 +64,13 @@ async def run(settings: Settings) -> None:
             speech = await asyncio.to_thread(tts.synthesize, reply)
             await asyncio.to_thread(play, speech, tts.sample_rate)
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
+
+
+async def _restore_autonomy(furby: FurbyController) -> None:
+    try:
+        await furby.set_group_active(True)
+    except Exception:  # best effort on the way out; the Furby also recovers when it is power cycled
+        log.warning("Could not restore the Furby's autonomous behavior", exc_info=True)
 
 
 async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:
