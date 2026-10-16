@@ -46,10 +46,16 @@ class FurbyController:
     async def disconnect(self) -> None:
         await self._client.disconnect()
 
+    async def _ensure_connected(self) -> None:
+        """The Furby drops its Bluetooth link when it goes quiet. Reconnect before writing to it."""
+        if not self._client.connected:
+            await self.connect()
+
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
         _check_channel("red", red)
         _check_channel("green", green)
         _check_channel("blue", blue)
+        await self._ensure_connected()
         await self._client.set_antenna_color(red, green, blue)
 
     async def set_backlight(self, enabled: bool) -> None:
@@ -57,6 +63,7 @@ class FurbyController:
 
     async def trigger_action(self, input_id: int, index: int, subindex: int, specific: int) -> None:
         """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md."""
+        await self._ensure_connected()
         await self._client.trigger_action(input_id, index, subindex, specific)
 
     async def set_group_active(self, active: bool) -> None:
@@ -64,6 +71,7 @@ class FurbyController:
 
         Triggered actions only run while this is on, so they are played inside a short on-window.
         """
+        await self._ensure_connected()
         await self._client._write_gp(bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00]))
 
     async def act_for(

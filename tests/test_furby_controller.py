@@ -7,6 +7,8 @@ from ai_furby.furby_controller import FurbyController
 
 
 class FakeFurby:
+    connected = True
+
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
@@ -81,3 +83,22 @@ def test_act_for_repeats_action_inside_group_window():
     assert written[0] == ("gp", bytes.fromhex("e000000001"))
     assert written[-1] == ("gp", bytes.fromhex("e000000000"))
     assert sum(1 for item in written if item[0] == "action") >= 2
+
+
+def test_reconnects_before_writing_when_link_dropped():
+    events: list[str] = []
+
+    class Dropping(FakeFurby):
+        connected = False
+
+        async def connect(self, address=None, timeout=10.0, retries=3):
+            events.append("connect")
+            self.connected = True
+
+        async def trigger_action(self, input, index, subindex, specific):
+            events.append("action")
+
+    controller = FurbyController(SETTINGS, client_factory=Dropping)
+    run(controller.trigger_action(9, 0, 0, 6))
+
+    assert events == ["connect", "action"]
