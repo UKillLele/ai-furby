@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 
 import numpy as np
@@ -140,5 +141,19 @@ def play(samples: np.ndarray, sample_rate: int, device: str | None = None) -> No
     rng = np.random.default_rng()
     quiet = np.abs(samples) < SILENCE_LEVEL
     samples = np.where(quiet, rng.uniform(-NOISE_FLOOR, NOISE_FLOOR, size=samples.shape).astype(np.float32), samples)
-    sd.play(samples, samplerate=device_rate, device=output)
+    try:
+        _play_once(samples, device_rate, output)
+    except sd.PortAudioError:
+        # Bluetooth audio devices can appear or change while the program runs, and PortAudio keeps the old list.
+        # Refresh the device list once and try again.
+        log.warning("Playback failed; refreshing audio devices and retrying", exc_info=True)
+        sd._terminate()
+        sd._initialize()
+        output = find_device(device, "output") if device else None
+        _play_once(samples, device_rate, output)
+
+
+def _play_once(samples: np.ndarray, rate: int, output: int | None) -> None:
+    log.info("Playing on device %s at %d Hz", output if output is not None else "default", rate)
+    sd.play(samples, samplerate=rate, device=output)
     sd.wait()
