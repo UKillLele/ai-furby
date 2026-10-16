@@ -70,19 +70,22 @@ class FurbyController:
         self,
         action: tuple[int, int, int, int],
         seconds: float,
-        repeat_seconds: float = ACTION_REPEAT_SECONDS,
+        repeat_seconds: float | None = None,
     ) -> None:
-        """Keeps the Furby moving for about `seconds`, repeating the action every `repeat_seconds`.
+        """Keeps the Furby moving for about `seconds`, repeating `action` back to back.
 
-        The group is on only for this window, then turned off again. Actions have a fixed length of their
-        own, so repeating one is how a short action covers a longer reply.
+        The group is on only for this window, then turned off again. Each repeat waits for the action's
+        measured length, so the movements run one after another without overlapping.
         """
+        from ai_furby.mood_actions import ACTION_SECONDS
+
+        step = repeat_seconds if repeat_seconds is not None else ACTION_SECONDS.get(action, ACTION_REPEAT_SECONDS)
         await self.set_group_active(True)
         try:
             remaining = seconds
             while remaining > 0:
                 await self.trigger_action(*action)
-                wait = min(repeat_seconds, remaining)
+                wait = min(step, remaining)
                 await asyncio.sleep(wait)
                 remaining -= wait
         finally:

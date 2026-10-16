@@ -9,3 +9,17 @@ MOOD_ACTIONS: dict[str, tuple[int, int, int, int]] = {
     "sleepy": (9, 2, 0, 1),  # shaking yawn
     "silly": (9, 3, 0, 4),  # shake noises
 }
+
+# Measured end-to-end length of each action in seconds (trigger to the Furby's SequenceEnded signal).
+ACTION_SECONDS: dict[tuple[int, int, int, int], float] = {
+    (26, 0, 0, 2): 4.00,  # mouth full mumbling (beak)
+    (9, 0, 0, 6): 4.33,  # spinning noises
+    (9, 2, 0, 2): 2.27,  # crying shake
+    (24, 4, 0, 1): 4.27,  # laughing
+    (24, 1, 3, 0): 4.23,  # flip upside down
+    (9, 2, 0, 1): 3.58,  # shaking yawn
+    (9, 3, 0, 4): 2.64,  # shake noises
+}
+
+# Beak-only movement for the rest of a longer reply. Its voice is silent while the Furby's speaker is off.
+BEAK_ACTION = (26, 0, 0, 2)

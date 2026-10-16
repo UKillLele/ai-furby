@@ -10,7 +10,7 @@ import re
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_controller import FurbyController
-from ai_furby.mood_actions import MOOD_ACTIONS
+from ai_furby.mood_actions import ACTION_SECONDS, BEAK_ACTION, MOOD_ACTIONS
 from ai_furby.speech_to_text import SpeechToText
 from ai_furby.text_to_speech import TextToSpeech
 
@@ -99,14 +99,18 @@ async def _speak_with_movement(
     # Audio takes a moment to open its stream, and Bluetooth commands take a moment to reach the Furby.
     # Let the audio start first, then start the movement, so the two line up.
     await asyncio.sleep(MOVEMENT_DELAY_SECONDS)
-    await asyncio.gather(_move(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
+    await asyncio.gather(_move_with_beak(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
 
 
-async def _move(furby: FurbyController, action: tuple[int, int, int, int], seconds: float) -> None:
+async def _move_with_beak(furby: FurbyController, action: tuple[int, int, int, int], seconds: float) -> None:
+    """One full mood movement at the start of the reply, then beak movement for the rest of it."""
     try:
-        await furby.act_for(action, seconds)
+        first = min(ACTION_SECONDS.get(action, 2.5), seconds)
+        await furby.act_for(action, first)
+        if seconds > first:
+            await furby.act_for(BEAK_ACTION, seconds - first)
     except Exception:  # an action failure should not stop the reply
-        log.warning("Could not play the mood action", exc_info=True)
+        log.warning("Could not play the movement", exc_info=True)
 
 
 async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:
