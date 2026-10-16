@@ -85,20 +85,28 @@ def test_act_for_repeats_action_inside_group_window():
     assert sum(1 for item in written if item[0] == "action") >= 2
 
 
-def test_reconnects_before_writing_when_link_dropped():
+def test_reconnects_and_retries_when_link_dropped():
     events: list[str] = []
 
     class Dropping(FakeFurby):
-        connected = False
+        def __init__(self) -> None:
+            super().__init__()
+            self.dropped_once = False
 
         async def connect(self, address=None, timeout=10.0, retries=3):
             events.append("connect")
-            self.connected = True
+
+        async def disconnect(self):
+            events.append("disconnect")
 
         async def trigger_action(self, input, index, subindex, specific):
+            if not self.dropped_once:
+                self.dropped_once = True
+                events.append("dropped")
+                raise RuntimeError("Not connected to Furby")
             events.append("action")
 
     controller = FurbyController(SETTINGS, client_factory=Dropping)
     run(controller.trigger_action(9, 0, 0, 6))
 
-    assert events == ["connect", "action"]
+    assert events == ["dropped", "disconnect", "connect", "action"]

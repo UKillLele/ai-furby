@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+import contextlib
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from ai_furby.config import Settings
 
+
+log = logging.getLogger(__name__)
 
 ACTION_REPEAT_SECONDS = 2.5  # roughly how long one built-in action takes; tune by watching the Furby
 
@@ -46,33 +50,39 @@ class FurbyController:
     async def disconnect(self) -> None:
         await self._client.disconnect()
 
-    async def _ensure_connected(self) -> None:
-        """The Furby drops its Bluetooth link when it goes quiet. Reconnect before writing to it."""
-        if not self._client.connected:
+    async def _write(self, operation: Callable[[], Awaitable[None]]) -> None:
+        """Runs one command. If the Furby's Bluetooth link has dropped, reconnect from scratch and try once more."""
+        try:
+            await operation()
+        except RuntimeError as error:
+            if "Not connected" not in str(error):
+                raise
+            log.info("Furby link dropped; reconnecting")
+            with contextlib.suppress(Exception):
+                await self._client.disconnect()
             await self.connect()
+            await operation()
 
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
         _check_channel("red", red)
         _check_channel("green", green)
         _check_channel("blue", blue)
-        await self._ensure_connected()
-        await self._client.set_antenna_color(red, green, blue)
+        await self._write(lambda: self._client.set_antenna_color(red, green, blue))
 
     async def set_backlight(self, enabled: bool) -> None:
         await self._client.set_lcd_backlight(enabled)
 
     async def trigger_action(self, input_id: int, index: int, subindex: int, specific: int) -> None:
         """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md."""
-        await self._ensure_connected()
-        await self._client.trigger_action(input_id, index, subindex, specific)
+        await self._write(lambda: self._client.trigger_action(input_id, index, subindex, specific))
 
     async def set_group_active(self, active: bool) -> None:
         """Turns the Furby's own behavior on or off (GeneralPlus command 0xe0, per PyFluff's protocol docs).
 
         Triggered actions only run while this is on, so they are played inside a short on-window.
         """
-        await self._ensure_connected()
-        await self._client._write_gp(bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00]))
+        command = bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00])
+        await self._write(lambda: self._client._write_gp(command))
 
     async def act_for(
         self,
