@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
@@ -16,6 +17,12 @@ from ai_furby.text_to_speech import TextToSpeech
 log = logging.getLogger(__name__)
 
 STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
+
+
+def is_stop_phrase(heard: str) -> bool:
+    """Ignores case, punctuation, and extra spaces, so "Goodbye, Furby!" matches."""
+    words = re.sub(r"[^a-z ]", " ", heard.lower())
+    return " ".join(words.split()) in STOP_PHRASES
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
@@ -50,7 +57,7 @@ async def run(settings: Settings) -> None:
             if not heard:
                 continue
             print(f"You: {heard}")
-            if heard.lower().strip(" .!?") in STOP_PHRASES:
+            if is_stop_phrase(heard):
                 print("Furby: Bye for now!")
                 break
 
