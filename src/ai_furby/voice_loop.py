@@ -26,6 +26,8 @@ def is_stop_phrase(heard: str) -> bool:
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
+# After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
+MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
 SPEAKING_COLOR = (0, 0, 255)
 
@@ -70,6 +72,7 @@ async def run(settings: Settings) -> None:
             print(f"Furby: {reply}")
             log.info("Mood: %s", assistant.last_mood)
 
+            await asyncio.sleep(MIC_RELEASE_SECONDS)
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
             seconds = len(speech) / tts.sample_rate
