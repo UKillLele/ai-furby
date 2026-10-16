@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import sounddevice as sd
+
+log = logging.getLogger(__name__)
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
@@ -105,7 +109,9 @@ def play(samples: np.ndarray, sample_rate: int, device: str | int | None = None)
     if samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
     # Many headsets only accept their own rate (for example 48 kHz), so convert Piper's rate to the device's rate.
-    device_rate = int(sd.query_devices(device, kind="output")["default_samplerate"])
+    info = sd.query_devices(device, kind="output")
+    device_rate = int(info["default_samplerate"])
+    log.info("Playing on %s [%s] at %d Hz", info["name"], sd.query_hostapis(info["hostapi"])["name"], device_rate)
     samples = _resample(samples, sample_rate, device_rate)
     sd.play(samples, samplerate=device_rate, device=device)
     sd.wait()
