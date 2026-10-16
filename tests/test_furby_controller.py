@@ -65,8 +65,8 @@ def test_trigger_action_passes_ids_through():
     assert ("action", 1, 2, 3, 4) in fake.calls
 
 
-def test_play_action_turns_group_on_triggers_then_off():
-    written: list[bytes] = []
+def test_act_for_repeats_action_inside_group_window():
+    written: list[tuple] = []
 
     class Recorder(FakeFurby):
         async def _write_gp(self, data):
@@ -76,10 +76,8 @@ def test_play_action_turns_group_on_triggers_then_off():
             written.append(("action", input, index, subindex, specific))
 
     controller = FurbyController(SETTINGS, client_factory=Recorder)
-    run(controller.play_action(9, 0, 0, 6, hold_seconds=0))
+    run(controller.act_for((9, 0, 0, 6), seconds=0.05, repeat_seconds=0.02))
 
-    assert written == [
-        ("gp", bytes.fromhex("e000000001")),
-        ("action", 9, 0, 0, 6),
-        ("gp", bytes.fromhex("e000000000")),
-    ]
+    assert written[0] == ("gp", bytes.fromhex("e000000001"))
+    assert written[-1] == ("gp", bytes.fromhex("e000000000"))
+    assert sum(1 for item in written if item[0] == "action") >= 2

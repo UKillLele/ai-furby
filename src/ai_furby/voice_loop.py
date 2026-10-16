@@ -61,21 +61,34 @@ async def run(settings: Settings) -> None:
                 continue
             print(f"Furby: {reply}")
 
-            await _show_mood(furby, assistant.last_mood)
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
-            await asyncio.to_thread(audio.play, speech, tts.sample_rate)
+            seconds = len(speech) / tts.sample_rate
+            await _speak_with_movement(furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds)
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
-async def _show_mood(furby: FurbyController | None, mood: str | None) -> None:
-    """Plays the built-in action for the mood before speaking. The Furby is quiet between these moments."""
+async def _speak_with_movement(
+    furby: FurbyController | None,
+    mood: str | None,
+    audio,
+    speech,
+    sample_rate: int,
+    seconds: float,
+) -> None:
+    """Plays the reply while the Furby moves for the same length of time."""
+    speaking = asyncio.to_thread(audio.play, speech, sample_rate)
     if furby is None or mood is None or mood not in MOOD_ACTIONS:
+        await speaking
         return
+    await asyncio.gather(_move(furby, MOOD_ACTIONS[mood], seconds), speaking)
+
+
+async def _move(furby: FurbyController, action: tuple[int, int, int, int], seconds: float) -> None:
     try:
-        await furby.play_action(*MOOD_ACTIONS[mood])
+        await furby.act_for(action, seconds)
     except Exception:  # an action failure should not stop the reply
-        log.warning("Could not play the %s action", mood, exc_info=True)
+        log.warning("Could not play the mood action", exc_info=True)
 
 
 async def _set_antenna(furby: FurbyController | None, color: tuple[int, int, int]) -> None:

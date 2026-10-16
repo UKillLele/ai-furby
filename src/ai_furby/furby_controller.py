@@ -9,6 +9,9 @@ from typing import Any
 from ai_furby.config import Settings
 
 
+ACTION_REPEAT_SECONDS = 2.5  # roughly how long one built-in action takes; tune by watching the Furby
+
+
 class FurbyController:
     """Thin async wrapper over PyFluff's FurbyConnect.
 
@@ -63,14 +66,25 @@ class FurbyController:
         """
         await self._client._write_gp(bytes([0xE0, 0x00, 0x00, 0x00, 0x01 if active else 0x00]))
 
-    async def play_action(
-        self, input_id: int, index: int, subindex: int, specific: int, hold_seconds: float = 3.0
+    async def act_for(
+        self,
+        action: tuple[int, int, int, int],
+        seconds: float,
+        repeat_seconds: float = ACTION_REPEAT_SECONDS,
     ) -> None:
-        """Runs one built-in action with the group on for `hold_seconds`, then turns it off again."""
+        """Keeps the Furby moving for about `seconds`, repeating the action every `repeat_seconds`.
+
+        The group is on only for this window, then turned off again. Actions have a fixed length of their
+        own, so repeating one is how a short action covers a longer reply.
+        """
         await self.set_group_active(True)
         try:
-            await self.trigger_action(input_id, index, subindex, specific)
-            await asyncio.sleep(hold_seconds)
+            remaining = seconds
+            while remaining > 0:
+                await self.trigger_action(*action)
+                wait = min(repeat_seconds, remaining)
+                await asyncio.sleep(wait)
+                remaining -= wait
         finally:
             await self.set_group_active(False)
 
