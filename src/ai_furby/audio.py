@@ -9,6 +9,7 @@ import sounddevice as sd
 
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
+MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
@@ -120,5 +121,9 @@ def play(samples: np.ndarray, sample_rate: int) -> None:
 
         divisor = gcd(device_rate, sample_rate)
         samples = resample_poly(samples, device_rate // divisor, sample_rate // divisor).astype(np.float32)
+    # Resampling can overshoot full scale, and the device then clips the peaks. Keep headroom.
+    peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+    if peak > MAX_PEAK:
+        samples = samples * (MAX_PEAK / peak)
     sd.play(samples, samplerate=device_rate)
     sd.wait()
