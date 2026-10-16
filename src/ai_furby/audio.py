@@ -18,13 +18,18 @@ MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 
 
 def find_input_device(name_part: str) -> int | None:
-    """Returns the index of an input device whose name contains `name_part`.
+    return find_device(name_part, "input")
 
-    Windows lists the same mic under several host APIs, so WASAPI is preferred when it is available.
+
+def find_device(name_part: str, kind: str) -> int | None:
+    """Returns the index of an `input` or `output` device whose name contains `name_part`.
+
+    Windows lists the same device under several host APIs, so WASAPI is preferred when it is available.
     """
+    channel_key = "max_input_channels" if kind == "input" else "max_output_channels"
     matches = []
     for index, device in enumerate(sd.query_devices()):
-        if device["max_input_channels"] > 0 and name_part.lower() in device["name"].lower():
+        if device[channel_key] > 0 and name_part.lower() in device["name"].lower():
             host_api = sd.query_hostapis(device["hostapi"])["name"]
             matches.append((0 if "WASAPI" in host_api else 1, index))
     return min(matches)[1] if matches else None
@@ -110,12 +115,15 @@ def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     return np.interp(new_positions, old_positions, samples).astype(np.float32)
 
 
-def play(samples: np.ndarray, sample_rate: int) -> None:
-    """Plays int16 or float32 mono samples and waits until they finish."""
+def play(samples: np.ndarray, sample_rate: int, device: str | None = None) -> None:
+    """Plays int16 or float32 mono samples on the named output device (or the default) and waits until they finish."""
+    output = find_device(device, "output") if device else None
+    if device and output is None:
+        raise RuntimeError(f"No output device matches {device!r}")
     if samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
     # Convert to the output device's own rate ourselves, so Windows doesn't resample in the middle of playback.
-    device_rate = int(sd.query_devices(kind="output")["default_samplerate"])
+    device_rate = int(sd.query_devices(output, kind="output")["default_samplerate"])
     if device_rate != sample_rate:
         from math import gcd
 
@@ -132,5 +140,5 @@ def play(samples: np.ndarray, sample_rate: int) -> None:
     rng = np.random.default_rng()
     quiet = np.abs(samples) < SILENCE_LEVEL
     samples = np.where(quiet, rng.uniform(-NOISE_FLOOR, NOISE_FLOOR, size=samples.shape).astype(np.float32), samples)
-    sd.play(samples, samplerate=device_rate)
+    sd.play(samples, samplerate=device_rate, device=output)
     sd.wait()

@@ -73,7 +73,9 @@ async def run(settings: Settings) -> None:
             speech = await asyncio.to_thread(tts.synthesize, reply)
             seconds = len(speech) / tts.sample_rate
             try:
-                await _speak_with_movement(furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds)
+                await _speak_with_movement(
+                    furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
+                )
             except Exception as error:  # a speaker problem should not end the conversation
                 log.exception("Playback failed")
                 print(f"(could not play speech: {type(error).__name__}; check the speakers)")
@@ -87,9 +89,10 @@ async def _speak_with_movement(
     speech,
     sample_rate: int,
     seconds: float,
+    speaker_device: str | None,
 ) -> None:
     """Plays the reply while the Furby moves for the same length of time."""
-    speaking = asyncio.create_task(asyncio.to_thread(audio.play, speech, sample_rate))
+    speaking = asyncio.create_task(asyncio.to_thread(audio.play, speech, sample_rate, speaker_device))
     if furby is None or mood is None or mood not in MOOD_ACTIONS:
         await speaking
         return
