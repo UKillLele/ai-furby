@@ -45,6 +45,8 @@ async def _serve(commands: Any, settings: Settings) -> None:
                 await furby.set_group_active(*args)
             elif kind == "action":
                 await furby.trigger_action(*args)
+            elif kind == "backlight":
+                await furby.set_backlight(*args)
             else:
                 log.warning("Unknown Furby command %r", kind)
         except Exception:  # one failed command should not stop the others

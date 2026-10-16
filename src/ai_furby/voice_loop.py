@@ -26,6 +26,7 @@ def is_stop_phrase(heard: str) -> bool:
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
+FOLLOW_UP_SECONDS = 10.0  # after a reply, the next thing you say can come within this window without the wake word
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
@@ -58,17 +59,25 @@ async def run(settings: Settings) -> None:
             print("Say 'Hey Jarvis' (stand-in for 'Hey Furby') to start talking. Say 'goodbye Furby' to stop.")
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
+        conversing = False  # True while a conversation is ongoing and the wake word isn't required
         while True:
-            if wake is not None:
-                await _set_antenna(furby, (0, 0, 0))
+            if wake is not None and not conversing:
+                await _go_to_sleep(furby)
                 await asyncio.to_thread(wake.wait_for_wake)
                 print("(wake word heard)")
+                await _wake_up(furby)
             await _set_antenna(furby, LISTENING_COLOR)
+            # During a conversation, wait up to FOLLOW_UP_SECONDS for the next thing you say; silence ends it.
+            wait = FOLLOW_UP_SECONDS if conversing else 30.0
             utterance = await asyncio.to_thread(
-                audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device
+                audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device, wait_seconds=wait
             )
             if utterance.size == 0:
+                if conversing:
+                    print("(quiet for a while; say the wake word to talk again)")
+                conversing = False
                 continue
+            conversing = True
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
@@ -77,8 +86,8 @@ async def run(settings: Settings) -> None:
             if is_stop_phrase(heard):
                 print("Furby: Bye for now!")
                 await _say_goodbye(furby, tts, audio, settings)
+                conversing = False
                 if settings.wake_word_enabled:
-                    await _go_to_sleep(furby)
                     continue  # back to waiting for the wake word
                 break
 
@@ -149,14 +158,24 @@ async def _say_goodbye(furby, tts, audio, settings: Settings) -> None:
 
 
 async def _go_to_sleep(furby: FurbyRemote | None) -> None:
-    """Sleep mode: the Furby's antenna goes dark and its own behavior is turned off until the wake word."""
+    """Sleep mode: the eyes and antenna go dark and the Furby's own behavior is turned off until the wake word."""
     if furby is None:
         return
     await _set_antenna(furby, (0, 0, 0))
     try:
+        await furby.set_backlight(False)
         await furby.set_group_active(False)
     except Exception:
         log.warning("Could not put the Furby to sleep", exc_info=True)
+
+
+async def _wake_up(furby: FurbyRemote | None) -> None:
+    if furby is None:
+        return
+    try:
+        await furby.set_backlight(True)
+    except Exception:
+        log.warning("Could not turn the Furby's eyes on", exc_info=True)
 
 
 async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:

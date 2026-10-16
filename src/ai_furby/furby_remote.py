@@ -48,6 +48,10 @@ class FurbyRemote:
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
         self._send("antenna", red, green, blue)
 
+    async def set_backlight(self, enabled: bool) -> None:
+        """The Furby's eyes (LCD backlight)."""
+        self._send("backlight", enabled)
+
     async def set_group_active(self, active: bool) -> None:
         self._send("group", active)
 
