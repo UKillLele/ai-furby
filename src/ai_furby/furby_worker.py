@@ -37,6 +37,9 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
         log.warning("Could not connect to the Furby yet; will retry on the next command", exc_info=True)
 
     sensor_task = asyncio.create_task(_forward_sensors(furby, events)) if events is not None else None
+    if events is not None:
+        # Sleep mask on/off: the Furby sends these as GeneralPlus notifications (20:13 added, 20:14 removed).
+        furby._client.add_gp_callback(lambda data: _forward_mask(data, events))
 
     while True:
         command = await asyncio.to_thread(commands.get)
@@ -63,6 +66,18 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
     if sensor_task is not None:
         sensor_task.cancel()
     await asyncio.gather(furby.disconnect(), return_exceptions=True)
+
+
+MASK_ON = bytes([0x20, 0x13])
+MASK_OFF = bytes([0x20, 0x14])
+
+
+def _forward_mask(data: bytes, events: Any) -> None:
+    """Sends sleep mask events to the parent as "mask:on" / "mask:off"."""
+    if data[:2] == MASK_ON:
+        events.put("mask:on")
+    elif data[:2] == MASK_OFF:
+        events.put("mask:off")
 
 
 async def _forward_sensors(furby: FurbyController, events: Any) -> None:

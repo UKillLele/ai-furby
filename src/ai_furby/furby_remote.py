@@ -18,6 +18,7 @@ class FurbyRemote:
     def __init__(self, settings: Settings, commands: Any | None = None) -> None:
         self._process = None
         self._events: Any = Queue()
+        self._mask_events: list[str] = []
         if commands is None:
             # "spawn" starts a clean interpreter, so the child does not inherit the audio library.
             context = multiprocessing.get_context("spawn")
@@ -54,13 +55,26 @@ class FurbyRemote:
         self._send("antenna", red, green, blue)
 
     def drain_sensor_readings(self) -> list[str]:
-        """Returns the raw sensor readings received since the last call, without waiting."""
+        """Returns the raw sensor readings received since the last call, without waiting.
+
+        Sleep mask events ("mask:on" / "mask:off") are kept aside for drain_mask_events().
+        """
         readings: list[str] = []
         while True:
             try:
-                readings.append(self._events.get_nowait())
+                item = self._events.get_nowait()
             except Empty:
                 return readings
+            if item.startswith("mask:"):
+                self._mask_events.append(item)
+            else:
+                readings.append(item)
+
+    def drain_mask_events(self) -> list[str]:
+        """Returns sleep mask events ("mask:on" / "mask:off") received since the last call."""
+        self.drain_sensor_readings()  # moves any queued mask events aside
+        events, self._mask_events = self._mask_events, []
+        return events
 
     async def set_backlight(self, enabled: bool) -> None:
         """The Furby's eyes (LCD backlight)."""
