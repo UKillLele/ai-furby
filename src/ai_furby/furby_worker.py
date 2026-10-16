@@ -7,7 +7,9 @@ breaks the Bluetooth connection, so the two must stay apart.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import signal
 from typing import Any
 
 from ai_furby.config import Settings
@@ -19,6 +21,8 @@ log = logging.getLogger(__name__)
 def run_worker(commands: Any, settings: Settings) -> None:
     """Process entry point. Reads commands from `commands` until it receives None."""
     logging.basicConfig(level=logging.WARNING)
+    # Ctrl+C reaches every process in the console. The parent shuts this process down cleanly with None instead.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     asyncio.run(_serve(commands, settings))
 
 
@@ -46,4 +50,7 @@ async def _serve(commands: Any, settings: Settings) -> None:
         except Exception:  # one failed command should not stop the others
             log.warning("Furby command %r failed", kind, exc_info=True)
 
+    # Leave the Furby in its quiet state rather than whatever state the last command set.
+    with contextlib.suppress(Exception):
+        await furby.set_group_active(False)
     await asyncio.gather(furby.disconnect(), return_exceptions=True)

@@ -35,6 +35,7 @@ class FurbyRemote:
             self._process.start()
 
     def stop(self) -> None:
+        self._send("group", False)  # make sure the Furby is left quiet
         self._commands.put(None)
         if self._process is not None:
             self._process.join(timeout=10)
