@@ -113,16 +113,19 @@ async def run(settings: Settings) -> None:
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
-        mask_on = asyncio.Event()  # set when the sleep mask goes on
+        mask_worn = asyncio.Event()  # set while the sleep mask is on; nothing wakes the Furby until it's removed
         if furby is not None:
-            mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_on))
+            mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
             stack.callback(mask_task.cancel)
         while True:
-            if mask_on.is_set():
-                # The sleep mask went on: Furby sleeps now, and the wake word or antenna is needed again.
-                mask_on.clear()
+            if mask_worn.is_set():
+                # Asleep while the mask is on: ignore the wake word, antenna, and speech until it's removed.
                 conversing = False
                 await _go_to_sleep(furby)
+                while mask_worn.is_set():
+                    await asyncio.sleep(0.5)
+                print("(sleep mask removed; say the wake word to talk)")
+                continue
             woke_by = None  # "voice" or "antenna" right after a wake; None otherwise
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
@@ -142,6 +145,8 @@ async def run(settings: Settings) -> None:
             utterance = await asyncio.to_thread(
                 audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device, wait_seconds=wait
             )
+            if mask_worn.is_set():
+                continue  # the mask went on while we were listening; ignore whatever was heard
             if utterance.size == 0:
                 if woke_by == "voice":
                     # The wake word came with nothing after it: greet, then keep the conversation open.
@@ -290,15 +295,16 @@ async def _greet(furby, tts, audio, settings: Settings) -> None:
     await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
-async def _watch_sleep_mask(furby: FurbyRemote, mask_on: asyncio.Event) -> None:
-    """Puts the Furby to sleep as soon as its sleep mask goes on, even while the assistant is listening."""
+async def _watch_sleep_mask(furby: FurbyRemote, mask_worn: asyncio.Event) -> None:
+    """Tracks the sleep mask: on sets `mask_worn`, off clears it."""
     while True:
         await asyncio.sleep(0.2)
         for event in furby.drain_mask_events():
             if event == "mask:on":
                 print("(sleep mask on)")
-                mask_on.set()
-                await _go_to_sleep(furby)
+                mask_worn.set()
+            elif event == "mask:off":
+                mask_worn.clear()
 
 
 async def _antenna_touched(furby: FurbyRemote | None) -> None:
