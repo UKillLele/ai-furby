@@ -8,6 +8,8 @@ import numpy as np
 
 from ai_furby.config import Settings
 
+MAX_SPEECH_PEAK = 0.7  # fraction of full scale for the loudest sample
+
 
 class TextToSpeech:
     def __init__(self, settings: Settings, voice: Any | None = None) -> None:
@@ -23,4 +25,10 @@ class TextToSpeech:
         chunks = [np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16) for chunk in self._voice.synthesize(text)]
         if not chunks:
             return np.zeros(0, dtype=np.int16)
-        return np.concatenate(chunks)
+        speech = np.concatenate(chunks).astype(np.float32)
+        # Piper normalizes each sentence to full scale, which flattens the peaks at sentence edges.
+        # Scale down so the speech has headroom and no sample hits the int16 limit.
+        peak = float(np.max(np.abs(speech))) if speech.size else 0.0
+        if peak > 0:
+            speech = speech * (MAX_SPEECH_PEAK * 32767.0 / peak)
+        return speech.astype(np.int16)

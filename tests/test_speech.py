@@ -42,7 +42,7 @@ def test_synthesize_concatenates_chunks_and_reports_sample_rate():
     tts = TextToSpeech(Settings(), voice=FakeVoice())
 
     assert tts.sample_rate == 22050
-    assert tts.synthesize("hi").tolist() == [1, 2, 3]
+    assert tts.synthesize("hi").tolist() == [7645, 15291, 22936]  # scaled so the loudest sample is 70% of full scale
 
 
 def test_transcribe_drops_segments_whisper_is_unsure_about():
