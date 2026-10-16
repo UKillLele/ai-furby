@@ -50,8 +50,19 @@ async def run(settings: Settings) -> None:
             print("Furby: not connected (FURBY_ADDRESS is not set in this terminal), so it won't move.")
         else:
             print(f"Furby: connected to {settings.furby_address}")
-        print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
+        wake = None
+        if settings.wake_word_enabled:
+            from ai_furby.wake_word import WakeWordListener, default_model_path
+
+            wake = WakeWordListener(default_model_path(), threshold=settings.wake_threshold, device=settings.mic_device)
+            print("Say 'Hey Jarvis' (stand-in for 'Hey Furby') to start talking. Say 'goodbye Furby' to stop.")
+        else:
+            print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
+            if wake is not None:
+                await _set_antenna(furby, (0, 0, 0))
+                await asyncio.to_thread(wake.wait_for_wake)
+                print("(wake word heard)")
             await _set_antenna(furby, LISTENING_COLOR)
             utterance = await asyncio.to_thread(
                 audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device

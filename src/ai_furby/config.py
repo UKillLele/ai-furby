@@ -21,6 +21,8 @@ class Settings:
     piper_model_path: str = DEFAULT_PIPER_MODEL
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
+    wake_word_enabled: bool = True
+    wake_threshold: float = 0.5
     mic_threshold: float = 0.01  # floor for quiet rooms; speech also has to be well above the measured room noise
 
     @classmethod
@@ -35,5 +37,7 @@ class Settings:
             piper_model_path=os.environ.get("PIPER_MODEL") or DEFAULT_PIPER_MODEL,
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
+            wake_word_enabled=os.environ.get("WAKE_WORD", "1") != "0",
+            wake_threshold=float(os.environ.get("WAKE_THRESHOLD", "0.5")),
             mic_threshold=float(os.environ.get("MIC_THRESHOLD", "0.01")),
         )
