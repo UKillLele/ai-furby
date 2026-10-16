@@ -8,6 +8,8 @@ from collections import deque
 import numpy as np
 import sounddevice as sd
 
+log = logging.getLogger(__name__)
+
 INPUT_SAMPLE_RATE = 16000  # what faster-whisper expects
 BLOCK_SECONDS = 0.1
 SILENCE_LEVEL = 1e-4  # samples quieter than this count as digital silence
