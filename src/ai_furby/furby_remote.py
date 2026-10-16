@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+from queue import Empty, Queue
 from typing import Any
 
 from ai_furby.config import Settings
@@ -16,11 +17,15 @@ ACTION_REPEAT_SECONDS = 2.5  # used for actions whose length has not been measur
 class FurbyRemote:
     def __init__(self, settings: Settings, commands: Any | None = None) -> None:
         self._process = None
+        self._events: Any = Queue()
         if commands is None:
             # "spawn" starts a clean interpreter, so the child does not inherit the audio library.
             context = multiprocessing.get_context("spawn")
             commands = context.Queue()
-            self._process = context.Process(target=run_worker, args=(commands, settings), daemon=True)
+            self._events = context.Queue()
+            self._process = context.Process(
+                target=run_worker, args=(commands, settings, self._events), daemon=True
+            )
         self._commands = commands
 
     async def __aenter__(self) -> "FurbyRemote":
@@ -47,6 +52,15 @@ class FurbyRemote:
 
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
         self._send("antenna", red, green, blue)
+
+    def drain_sensor_readings(self) -> list[str]:
+        """Returns the raw sensor readings received since the last call, without waiting."""
+        readings: list[str] = []
+        while True:
+            try:
+                readings.append(self._events.get_nowait())
+            except Empty:
+                return readings
 
     async def set_backlight(self, enabled: bool) -> None:
         """The Furby's eyes (LCD backlight)."""

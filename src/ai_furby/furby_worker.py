@@ -18,20 +18,25 @@ from ai_furby.furby_controller import FurbyController
 log = logging.getLogger(__name__)
 
 
-def run_worker(commands: Any, settings: Settings) -> None:
-    """Process entry point. Reads commands from `commands` until it receives None."""
+def run_worker(commands: Any, settings: Settings, events: Any | None = None) -> None:
+    """Process entry point. Reads commands from `commands` until it receives None.
+
+    Raw sensor readings are sent back on `events` when given.
+    """
     logging.basicConfig(level=logging.WARNING)
     # Ctrl+C reaches every process in the console. The parent shuts this process down cleanly with None instead.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    asyncio.run(_serve(commands, settings))
+    asyncio.run(_serve(commands, settings, events))
 
 
-async def _serve(commands: Any, settings: Settings) -> None:
+async def _serve(commands: Any, settings: Settings, events: Any | None = None) -> None:
     furby = FurbyController(settings)
     try:
         await furby.connect()
     except Exception:
         log.warning("Could not connect to the Furby yet; will retry on the next command", exc_info=True)
+
+    sensor_task = asyncio.create_task(_forward_sensors(furby, events)) if events is not None else None
 
     while True:
         command = await asyncio.to_thread(commands.get)
@@ -55,4 +60,15 @@ async def _serve(commands: Any, settings: Settings) -> None:
     # Leave the Furby in its quiet state rather than whatever state the last command set.
     with contextlib.suppress(Exception):
         await furby.set_group_active(False)
+    if sensor_task is not None:
+        sensor_task.cancel()
     await asyncio.gather(furby.disconnect(), return_exceptions=True)
+
+
+async def _forward_sensors(furby: FurbyController, events: Any) -> None:
+    """Sends each raw sensor reading to the parent process. Ends quietly if the sensor stream stops."""
+    try:
+        async for sample in furby._client.sensor_stream():
+            events.put(sample.raw_data)
+    except Exception:
+        log.warning("Furby sensor stream stopped", exc_info=True)

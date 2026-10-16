@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from math import gcd
 from pathlib import Path
@@ -32,14 +33,14 @@ class WakeWordListener:
         self._threshold = threshold
         self._device = find_input_device(device) if device else None
 
-    def wait_for_wake(self, timeout: float | None = None) -> bool:
-        """Blocks until the wake word is heard. Returns False if `timeout` seconds pass first."""
+    def wait_for_wake(self, timeout: float | None = None, stop: threading.Event | None = None) -> bool:
+        """Blocks until the wake word is heard. Returns False if `timeout` passes or `stop` is set first."""
         device_rate = int(sd.query_devices(self._device, kind="input")["default_samplerate"])
         block = int(device_rate * FRAME_SECONDS)
         deadline = None if timeout is None else time.monotonic() + timeout
         self._model.reset()
         with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=self._device) as stream:
-            while deadline is None or time.monotonic() < deadline:
+            while (deadline is None or time.monotonic() < deadline) and not (stop and stop.is_set()):
                 data, _overflowed = stream.read(block)
                 frame = _to_model_rate(data[:, 0], device_rate)
                 scores = self._model.predict(frame)

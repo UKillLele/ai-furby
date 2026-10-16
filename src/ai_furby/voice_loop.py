@@ -6,7 +6,10 @@ import asyncio
 import contextlib
 import logging
 import re
+import threading
+import time
 
+from ai_furby.antenna_touch import is_antenna_movement
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
 from ai_furby.furby_remote import FurbyRemote
@@ -26,6 +29,8 @@ def is_stop_phrase(heard: str) -> bool:
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
+ANTENNA_WINDOW_SECONDS = 3.0  # antenna movements this close together count as a touch
+ANTENNA_TOUCHES_NEEDED = 2  # readings needed within the window
 FOLLOW_UP_SECONDS = 10.0  # after a reply, the next thing you say can come within this window without the wake word
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
@@ -63,8 +68,8 @@ async def run(settings: Settings) -> None:
         while True:
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
-                await asyncio.to_thread(wake.wait_for_wake)
-                print("(wake word heard)")
+                await _wait_for_wake_word_or_antenna(wake, furby)
+                print("(woken)")
                 await _wake_up(furby)
             await _set_antenna(furby, LISTENING_COLOR)
             # During a conversation, wait up to FOLLOW_UP_SECONDS for the next thing you say; silence ends it.
@@ -166,6 +171,37 @@ async def _go_to_sleep(furby: FurbyRemote | None) -> None:
         await furby.set_backlight(False)
     except Exception:
         log.warning("Could not put the Furby to sleep", exc_info=True)
+
+
+async def _wait_for_wake_word_or_antenna(wake, furby: FurbyRemote | None) -> None:
+    """Returns when the wake word is heard or the antenna is moved, whichever comes first."""
+    stop = threading.Event()
+    voice = asyncio.create_task(asyncio.to_thread(wake.wait_for_wake, None, stop))
+    touch = asyncio.create_task(_antenna_touched(furby))
+    try:
+        await asyncio.wait({voice, touch}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        stop.set()
+        touch.cancel()
+        await asyncio.gather(voice, touch, return_exceptions=True)
+
+
+async def _antenna_touched(furby: FurbyRemote | None) -> None:
+    """Returns after the antenna is moved twice within ANTENNA_WINDOW_SECONDS. Never returns without furby."""
+    if furby is None:
+        await asyncio.Event().wait()
+        return
+    recent: list[float] = []
+    while True:
+        await asyncio.sleep(0.1)
+        now = time.monotonic()
+        for raw in furby.drain_sensor_readings():
+            if is_antenna_movement(raw):
+                recent.append(now)
+        recent = [t for t in recent if now - t <= ANTENNA_WINDOW_SECONDS]
+        if len(recent) >= ANTENNA_TOUCHES_NEEDED:
+            print("(antenna touched)")
+            return
 
 
 async def _wake_up(furby: FurbyRemote | None) -> None:
