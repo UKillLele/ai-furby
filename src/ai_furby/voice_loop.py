@@ -7,7 +7,6 @@ import contextlib
 import logging
 
 from ai_furby.assistant import Assistant
-from ai_furby.audio import play, record_utterance
 from ai_furby.config import Settings
 from ai_furby.furby_controller import FurbyController
 from ai_furby.mood_actions import MOOD_ACTIONS
@@ -33,16 +32,20 @@ async def run(settings: Settings) -> None:
         if settings.furby_address:
             furby = await stack.enter_async_context(FurbyController(settings))
 
+        # Imported only after the Furby is connected: on Windows, loading sounddevice first makes the
+        # Bluetooth connection fail with "Thread is configured for Windows GUI".
+        from ai_furby import audio
+
         print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         while True:
             await _set_antenna(furby, LISTENING_COLOR)
-            audio = await asyncio.to_thread(
-                record_utterance, threshold=settings.mic_threshold, device=settings.mic_device
+            utterance = await asyncio.to_thread(
+                audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device
             )
-            if audio.size == 0:
+            if utterance.size == 0:
                 continue
 
-            heard = await asyncio.to_thread(stt.transcribe, audio)
+            heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
                 continue
             print(f"You: {heard}")
@@ -61,7 +64,7 @@ async def run(settings: Settings) -> None:
             await _show_mood(furby, assistant.last_mood)
             await _set_antenna(furby, SPEAKING_COLOR)
             speech = await asyncio.to_thread(tts.synthesize, reply)
-            await asyncio.to_thread(play, speech, tts.sample_rate)
+            await asyncio.to_thread(audio.play, speech, tts.sample_rate)
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
