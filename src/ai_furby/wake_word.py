@@ -19,10 +19,8 @@ FRAME_SAMPLES = int(MODEL_RATE * FRAME_SECONDS)
 
 
 def default_model_path() -> Path:
-    """The stand-in wake word shipped with openWakeWord. Swap in a custom "hey furby" model when it is trained."""
-    import openwakeword
-
-    return Path(openwakeword.__file__).parent / "resources" / "models" / "hey_jarvis_v0.1.onnx"
+    """The trained "Hey Furby" model. Built with openWakeWord from data/wakeword/hey_furby_train.yml."""
+    return Path(__file__).resolve().parents[2] / "models" / "hey_furby.onnx"
 
 
 class WakeWordListener:

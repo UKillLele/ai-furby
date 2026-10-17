@@ -109,7 +109,7 @@ async def run(settings: Settings) -> None:
             from ai_furby.wake_word import WakeWordListener, default_model_path
 
             wake = WakeWordListener(default_model_path(), threshold=settings.wake_threshold, device=settings.mic_device)
-            print("Say 'Hey Jarvis' (stand-in for 'Hey Furby') to start talking. Say 'goodbye Furby' to stop.")
+            print("Say 'Hey Furby' to start talking. Say 'goodbye Furby' to stop.")
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
@@ -131,6 +131,7 @@ async def run(settings: Settings) -> None:
                 await _go_to_sleep(furby)
                 woke_by = await _wait_for_wake_word_or_antenna(wake, furby)
                 print(f"(woken by {woke_by})")
+                log.info("Furby is awake (woken by %s); eyes on", woke_by)
                 await _wake_up(furby)
                 if woke_by == "antenna":
                     await _greet(furby, tts, audio, settings)
@@ -155,6 +156,7 @@ async def run(settings: Settings) -> None:
                     continue
                 if conversing:
                     print("(quiet for a while; say the wake word to talk again)")
+                    log.info("Furby is idle; eyes off until the wake word")
                 conversing = False
                 continue
             conversing = True
