@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from collections import deque
 
 import numpy as np
@@ -18,6 +19,29 @@ MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
+
+# The amp's shutdown pin (SD_MODE) can be driven from a GPIO pin, so the amp is silent while listening.
+# Set by configure_amp() from AMP_ENABLE_PIN; None leaves the amp always on.
+_amp_pin: int | None = None
+_amp_warned = False
+
+
+def configure_amp(pin: int | None) -> None:
+    global _amp_pin
+    _amp_pin = pin
+
+
+def set_amp(on: bool) -> None:
+    """Turns the amp on for playback and off while listening. Uses the Pi's `pinctrl` tool."""
+    global _amp_warned
+    if _amp_pin is None:
+        return
+    try:
+        subprocess.run(["pinctrl", str(_amp_pin), "op", "dh" if on else "dl"], check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError):
+        if not _amp_warned:
+            log.warning("Could not switch the amp on GPIO %s; check that pinctrl is installed", _amp_pin)
+            _amp_warned = True
 
 
 def find_input_device(name_part: str) -> int | None:
@@ -67,6 +91,7 @@ def record_utterance(
     speaking = False
     silent_run = 0
 
+    set_amp(False)  # keep the amp quiet while listening, so it doesn't pick up the mic's clock noise
     with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=device) as stream:
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
@@ -164,5 +189,9 @@ def play(samples: np.ndarray, sample_rate: int, device: str | None = None) -> No
 
 def _play_once(samples: np.ndarray, rate: int, output: int | None) -> None:
     log.info("Playing on device %s at %d Hz", output if output is not None else "default", rate)
-    sd.play(samples, samplerate=rate, device=output)
-    sd.wait()
+    set_amp(True)
+    try:
+        sd.play(samples, samplerate=rate, device=output)
+        sd.wait()
+    finally:
+        set_amp(False)

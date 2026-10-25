@@ -28,6 +28,7 @@ class Settings:
     voice_reference_path: str = DEFAULT_VOICE_REFERENCE  # empty string uses the preset voice_id instead
     voice_lowpass_hz: float = DEFAULT_VOICE_LOWPASS_HZ
     speech_peak: float = DEFAULT_SPEECH_PEAK
+    amp_enable_pin: int | None = None  # BCM GPIO number wired to the amp's SD_MODE pin; None keeps the amp always on
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
     wake_word_enabled: bool = True
@@ -50,6 +51,7 @@ class Settings:
             voice_reference_path=os.environ.get("VOICE_REFERENCE", DEFAULT_VOICE_REFERENCE),
             voice_lowpass_hz=float(os.environ.get("VOICE_LOWPASS_HZ", str(DEFAULT_VOICE_LOWPASS_HZ))),
             speech_peak=float(os.environ.get("SPEECH_PEAK", str(DEFAULT_SPEECH_PEAK))),
+            amp_enable_pin=int(os.environ["AMP_ENABLE_PIN"]) if os.environ.get("AMP_ENABLE_PIN") else None,
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
             wake_word_enabled=os.environ.get("WAKE_WORD", "1") != "0",
