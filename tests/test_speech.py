@@ -13,7 +13,6 @@ SETTINGS = Settings(
     furby_address=None,
     mistral_api_key="test-key",
     voice_reference_path="",
-    voice_semitones=0.0,
     voice_lowpass_hz=8000.0,
 )
 
@@ -106,15 +105,6 @@ def test_synthesize_resamples_other_rates():
     assert abs(len(out) - 16000) <= 2  # one second at 16 kHz
 
 
-def test_pitch_shift_keeps_length():
-    t = np.arange(8000) / 16000
-    tone = (0.3 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
-    shifted = Settings(furby_address=None, mistral_api_key="k", voice_reference_path="",
-                       voice_semitones=8.0, voice_lowpass_hz=8000.0)
-    out = TextToSpeech(shifted, client=FakeSpeech(_wav_at(16000, tone))).synthesize("hi")
-
-    assert len(out) == 8000
-
 
 def test_empty_text_is_silence_without_a_request():
     client = FakeSpeech(_wav_at(16000, np.zeros(10, dtype=np.float32)))
@@ -134,8 +124,7 @@ def test_cloned_voice_sends_reference_instead_of_voice_id(tmp_path):
     path = tmp_path / "reference.wav"
     path.write_bytes(_wav_at(16000, np.zeros(16000, dtype=np.float32)))
     client = FakeSpeech(_wav_at(16000, np.zeros(16000, dtype=np.float32)))
-    settings = Settings(furby_address=None, mistral_api_key="k", voice_reference_path=str(path),
-                        voice_semitones=0.0, voice_lowpass_hz=8000.0)
+    settings = Settings(furby_address=None, mistral_api_key="k", voice_reference_path=str(path), voice_lowpass_hz=8000.0)
 
     TextToSpeech(settings, client=client).synthesize("hi")
 

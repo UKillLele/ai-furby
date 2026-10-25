@@ -10,7 +10,6 @@ DEFAULT_SPEECH_MODEL = "voxtral-mini-tts-3"
 # Mistral's preset voice "James". Set VOICE_ID to use a custom voice from your Mistral account.
 DEFAULT_VOICE_ID = "01a14675-dc30-778a-8d01-b5dead5a522a"
 DEFAULT_VOICE_REFERENCE = ""  # empty: use the saved custom voice by ID instead of sending a clip each time
-DEFAULT_VOICE_SEMITONES = 0.0  # the clone already has the adjusted pitch; set to 12 to use the James voice instead
 DEFAULT_VOICE_LOWPASS_HZ = 8000.0  # the clone already has the softened top end; 8000 means no filter
 DEFAULT_SPEAKER = "Speakers (Realtek"  # PC speakers; empty string means the Windows default output
 DEFAULT_MIC = "Logitech G PRO X 2"  # part of the device name; the headset mic on this PC
@@ -26,7 +25,6 @@ class Settings:
     speech_model: str = DEFAULT_SPEECH_MODEL
     voice_id: str = DEFAULT_VOICE_ID
     voice_reference_path: str = DEFAULT_VOICE_REFERENCE  # empty string uses the preset voice_id instead
-    voice_semitones: float = DEFAULT_VOICE_SEMITONES  # 0 turns the pitch shift off
     voice_lowpass_hz: float = DEFAULT_VOICE_LOWPASS_HZ
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
@@ -48,7 +46,6 @@ class Settings:
             speech_model=os.environ.get("SPEECH_MODEL") or DEFAULT_SPEECH_MODEL,
             voice_id=os.environ.get("VOICE_ID") or DEFAULT_VOICE_ID,
             voice_reference_path=os.environ.get("VOICE_REFERENCE", DEFAULT_VOICE_REFERENCE),
-            voice_semitones=float(os.environ.get("VOICE_SEMITONES", str(DEFAULT_VOICE_SEMITONES))),
             voice_lowpass_hz=float(os.environ.get("VOICE_LOWPASS_HZ", str(DEFAULT_VOICE_LOWPASS_HZ))),
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,

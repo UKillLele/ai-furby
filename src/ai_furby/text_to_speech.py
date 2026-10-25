@@ -79,10 +79,6 @@ class TextToSpeech:
     def _furby_voice(self, speech: np.ndarray) -> np.ndarray:
         if speech.size == 0:
             return speech
-        if self._settings.voice_semitones:
-            import librosa  # lazy: only needed when the pitch shift is on
-
-            speech = librosa.effects.pitch_shift(speech, sr=SAMPLE_RATE, n_steps=self._settings.voice_semitones)
         if self._settings.voice_lowpass_hz < SAMPLE_RATE / 2:
             from scipy.signal import butter, sosfilt
 
