@@ -121,6 +121,7 @@ async def run(settings: Settings) -> None:
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
+        last_speech = 0.0  # when the user last spoke or the Furby last replied; sleep waits FOLLOW_UP_SECONDS after this
         mask_worn = asyncio.Event()  # set while the sleep mask is on; nothing wakes the Furby until it's removed
         if furby is not None:
             mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
@@ -168,12 +169,17 @@ async def run(settings: Settings) -> None:
                     await _greet(furby, tts, audio, settings)
                     conversing = True
                     continue
+                if conversing and woke_by is None and time.monotonic() - last_speech < FOLLOW_UP_SECONDS:
+                    # Quiet for a moment, but not yet FOLLOW_UP_SECONDS since the last speech: keep listening.
+                    await asyncio.sleep(0.2)
+                    continue
                 if conversing:
                     print("(quiet for a while; say the wake word to talk again)")
                     log.info("Furby is idle; eyes off until the wake word")
                 conversing = False
                 continue
             conversing = True
+            last_speech = time.monotonic()
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
@@ -225,6 +231,7 @@ async def run(settings: Settings) -> None:
                 await _speak_with_movement(
                     furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
                 )
+                last_speech = time.monotonic()  # the 10-second quiet period starts after the reply
             except Exception as error:  # a speaker problem should not end the conversation
                 log.exception("Playback failed")
                 print(f"(could not play speech: {type(error).__name__}; check the speakers)")
