@@ -33,6 +33,7 @@ class FurbyController:
 
             client_factory = FurbyConnect
         self._client = client_factory()
+        self._connect_lock = asyncio.Lock()  # the command loop and the reconnect check must not connect at once
 
     async def __aenter__(self) -> "FurbyController":
         await self.connect()
@@ -41,17 +42,27 @@ class FurbyController:
     async def __aexit__(self, *_exc: object) -> None:
         await self.disconnect()
 
-    async def connect(self) -> None:
-        await self._client.connect(
-            address=self._settings.furby_address,
-            timeout=self._settings.furby_connect_timeout,
-        )
+    @property
+    def connected(self) -> bool:
+        return bool(getattr(self._client, "connected", True))
+
+    async def connect(self, retries: int = 3) -> None:
+        async with self._connect_lock:
+            await self._client.connect(
+                address=self._settings.furby_address,
+                timeout=self._settings.furby_connect_timeout,
+                retries=retries,
+            )
 
     async def disconnect(self) -> None:
         await self._client.disconnect()
 
     async def _write(self, operation: Callable[[], Awaitable[None]]) -> None:
-        """Runs one command. If the Furby's Bluetooth link has dropped, reconnect from scratch and try once more."""
+        """Runs one command. If the link has dropped, make one quick reconnect and try once more.
+
+        The background check in the worker keeps retrying the connection, so a command should not wait for the
+        full retry sequence. If the Furby is still unreachable, the error goes back to the caller.
+        """
         try:
             await operation()
         except RuntimeError as error:
@@ -60,7 +71,7 @@ class FurbyController:
             log.info("Furby link dropped; reconnecting")
             with contextlib.suppress(Exception):
                 await self._client.disconnect()
-            await self.connect()
+            await self.connect(retries=1)
             await operation()
 
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
@@ -70,10 +81,14 @@ class FurbyController:
         await self._write(lambda: self._client.set_antenna_color(red, green, blue))
 
     async def set_backlight(self, enabled: bool) -> None:
-        await self._client.set_lcd_backlight(enabled)
+        await self._write(lambda: self._client.set_lcd_backlight(enabled))
 
     async def trigger_action(self, input_id: int, index: int, subindex: int, specific: int) -> None:
-        """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md."""
+        """Run a built-in Furby action. IDs come from PyFluff's docs/actionlist.md.
+
+        The eyes (LCD backlight) are switched on first, so an action never starts with the eyes dark.
+        """
+        await self.set_backlight(True)
         await self._write(lambda: self._client.trigger_action(input_id, index, subindex, specific))
 
     async def set_group_active(self, active: bool) -> None:

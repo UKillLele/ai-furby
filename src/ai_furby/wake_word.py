@@ -11,7 +11,7 @@ import numpy as np
 import sounddevice as sd
 from scipy.signal import resample_poly
 
-from ai_furby.audio import find_input_device
+from ai_furby.audio import find_input_device, remove_offset
 
 MODEL_RATE = 16000  # openWakeWord expects 16 kHz audio
 FRAME_SECONDS = 0.08  # openWakeWord scores audio in 80 ms frames (1280 samples at 16 kHz)
@@ -19,10 +19,8 @@ FRAME_SAMPLES = int(MODEL_RATE * FRAME_SECONDS)
 
 
 def default_model_path() -> Path:
-    """The stand-in wake word shipped with openWakeWord. Swap in a custom "hey furby" model when it is trained."""
-    import openwakeword
-
-    return Path(openwakeword.__file__).parent / "resources" / "models" / "hey_jarvis_v0.1.onnx"
+    """The trained "Hey Furby" model. Built with openWakeWord from data/wakeword/hey_furby_train.yml."""
+    return Path(__file__).resolve().parents[2] / "models" / "hey_furby.onnx"
 
 
 class WakeWordListener:
@@ -42,7 +40,7 @@ class WakeWordListener:
         with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=self._device) as stream:
             while (deadline is None or time.monotonic() < deadline) and not (stop and stop.is_set()):
                 data, _overflowed = stream.read(block)
-                frame = _to_model_rate(data[:, 0], device_rate)
+                frame = _to_model_rate(remove_offset(data[:, 0]), device_rate)
                 scores = self._model.predict(frame)
                 if any(score >= self._threshold for score in scores.values()):
                     return True

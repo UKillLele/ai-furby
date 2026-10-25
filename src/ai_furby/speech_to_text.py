@@ -1,60 +1,54 @@
-"""Local speech-to-text with faster-whisper. Runs on the GPU by default, CPU via WHISPER_DEVICE=cpu."""
+"""Speech-to-text with Voxtral, Mistral's hosted transcription model. Audio is sent as 16 kHz mono WAV."""
 
 from __future__ import annotations
 
-import importlib.util
-import os
-import sys
-from pathlib import Path
+import io
+import wave
 from typing import Any
 
 import numpy as np
 
 from ai_furby.config import Settings
+from ai_furby.mistral import API_BASE, auth_headers
 
-MAX_NO_SPEECH_PROB = 0.6  # above this, Whisper thinks the segment is silence or noise
-MIN_AVG_LOGPROB = -1.0  # below this, Whisper is guessing
+SAMPLE_RATE = 16000  # what the recorder produces
 
 
-def _add_cuda_dll_dirs() -> None:
-    """On Windows, the pip-installed NVIDIA runtime DLLs (cuBLAS, cuDNN) are not on the search path by default."""
-    if sys.platform != "win32":
-        return
-    spec = importlib.util.find_spec("ctranslate2")  # locates this venv's site-packages without importing the library
-    if spec is None or spec.origin is None:
-        return
-    site_packages = Path(spec.origin).resolve().parent.parent
-    for bin_dir in (site_packages / "nvidia").glob("*/bin"):
-        os.add_dll_directory(str(bin_dir))
-        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"  # CTranslate2 loads DLLs via PATH
+def wav_bytes(audio: np.ndarray) -> bytes:
+    """Mono float audio in [-1, 1] as a 16-bit WAV file in memory."""
+    pcm = (np.clip(audio.astype(np.float32), -1.0, 1.0) * 32767).astype(np.int16)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(SAMPLE_RATE)
+        wav.writeframes(pcm.tobytes())
+    return buffer.getvalue()
 
 
 class SpeechToText:
-    def __init__(self, settings: Settings, model: Any | None = None) -> None:
-        if model is None:
-            _add_cuda_dll_dirs()
-            from faster_whisper import WhisperModel  # lazy: model download happens on first use
+    """`client` can be injected so tests run without network access. It needs a `post` method like httpx."""
 
-            model = WhisperModel(
-                settings.whisper_model,
-                device=settings.whisper_device,
-                compute_type=settings.whisper_compute_type,
-            )
-        self._model = model
+    def __init__(self, settings: Settings, client: Any | None = None) -> None:
+        self._settings = settings
+        self._client = client
+        if client is None:
+            auth_headers(settings)  # fail early with a clear message if the key is missing
 
     def transcribe(self, audio: np.ndarray) -> str:
-        """`audio` is mono float32 at 16 kHz, values in [-1, 1]."""
-        segments, _info = self._model.transcribe(
-            audio.astype(np.float32),
-            language="en",
-            beam_size=5,
-            vad_filter=True,
-            condition_on_previous_text=False,
+        if audio.size == 0:
+            return ""
+        client = self._client
+        if client is None:
+            import httpx  # lazy: keeps imports light when the network is not used
+
+            client = httpx
+        response = client.post(
+            f"{API_BASE}/audio/transcriptions",
+            headers=auth_headers(self._settings),
+            data={"model": self._settings.transcribe_model},
+            files={"file": ("speech.wav", wav_bytes(audio), "audio/wav")},
+            timeout=60,
         )
-        # Whisper invents stock phrases ("Thank you for watching") over noise. Drop segments it is unsure about.
-        kept = [
-            segment.text.strip()
-            for segment in segments
-            if segment.no_speech_prob <= MAX_NO_SPEECH_PROB and segment.avg_logprob >= MIN_AVG_LOGPROB
-        ]
-        return " ".join(kept).strip()
+        response.raise_for_status()
+        return str(response.json().get("text", "")).strip()
