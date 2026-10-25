@@ -107,6 +107,7 @@ async def run(settings: Settings) -> None:
         # Imported only after the Furby is connected: on Windows, loading sounddevice first makes the
         # Bluetooth connection fail with "Thread is configured for Windows GUI".
         from ai_furby import audio
+        audio.configure_amp(settings.amp_enable_pin)
 
         if furby is None:
             print("Furby: not connected (FURBY_ADDRESS is not set in this terminal), so it won't move.")
