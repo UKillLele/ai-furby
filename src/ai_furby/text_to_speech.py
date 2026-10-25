@@ -73,7 +73,7 @@ class TextToSpeech:
         # Keep headroom so no sample hits the int16 limit.
         peak = float(np.max(np.abs(speech))) if speech.size else 0.0
         if peak > 0:
-            speech = speech * (MAX_SPEECH_PEAK / peak)
+            speech = speech * (self._settings.speech_peak / peak)
         return (np.clip(speech, -1.0, 1.0) * 32767).astype(np.int16)
 
     def _furby_voice(self, speech: np.ndarray) -> np.ndarray:

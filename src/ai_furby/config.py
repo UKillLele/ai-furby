@@ -11,6 +11,7 @@ DEFAULT_SPEECH_MODEL = "voxtral-mini-tts-3"
 DEFAULT_VOICE_ID = "01a14675-dc30-778a-8d01-b5dead5a522a"
 DEFAULT_VOICE_REFERENCE = ""  # empty: use the saved custom voice by ID instead of sending a clip each time
 DEFAULT_VOICE_LOWPASS_HZ = 8000.0  # the clone already has the softened top end; 8000 means no filter
+DEFAULT_SPEECH_PEAK = 0.7  # loudest speech level as a fraction of full scale; lower it if the speaker crackles
 DEFAULT_SPEAKER = "Speakers (Realtek"  # PC speakers; empty string means the Windows default output
 DEFAULT_MIC = "Logitech G PRO X 2"  # part of the device name; the headset mic on this PC
 
@@ -26,6 +27,7 @@ class Settings:
     voice_id: str = DEFAULT_VOICE_ID
     voice_reference_path: str = DEFAULT_VOICE_REFERENCE  # empty string uses the preset voice_id instead
     voice_lowpass_hz: float = DEFAULT_VOICE_LOWPASS_HZ
+    speech_peak: float = DEFAULT_SPEECH_PEAK
     mic_device: str = DEFAULT_MIC
     speaker_device: str = DEFAULT_SPEAKER
     wake_word_enabled: bool = True
@@ -47,6 +49,7 @@ class Settings:
             voice_id=os.environ.get("VOICE_ID") or DEFAULT_VOICE_ID,
             voice_reference_path=os.environ.get("VOICE_REFERENCE", DEFAULT_VOICE_REFERENCE),
             voice_lowpass_hz=float(os.environ.get("VOICE_LOWPASS_HZ", str(DEFAULT_VOICE_LOWPASS_HZ))),
+            speech_peak=float(os.environ.get("SPEECH_PEAK", str(DEFAULT_SPEECH_PEAK))),
             mic_device=os.environ.get("MIC_DEVICE") or DEFAULT_MIC,
             speaker_device=os.environ.get("SPEAKER_DEVICE") or DEFAULT_SPEAKER,
             wake_word_enabled=os.environ.get("WAKE_WORD", "1") != "0",
