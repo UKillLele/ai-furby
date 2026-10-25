@@ -20,7 +20,7 @@ Set these environment variables. Keep them out of the repository.
 | `WEB_TOKEN` | Enables the phone control page and sets its access token. |
 | `WEB_PORT` | Port for the phone page. Defaults to 80. |
 
-Optional settings: `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `SPEECH_MODEL`, `MIC_DEVICE`, `SPEAKER_DEVICE`, `WAKE_WORD` (set to `0` to turn wake-word listening off), `VOICE_SEMITONES` and `VOICE_LOWPASS_HZ` (pitch and brightness shaping, both off by default for the custom voice).
+Optional settings: `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `SPEECH_MODEL`, `MIC_DEVICE`, `SPEAKER_DEVICE`, `WAKE_WORD` (set to `0` to turn wake-word listening off), `VOICE_LOWPASS_HZ` (softens the top end of the voice; off by default).
 
 ## Wake word
 
