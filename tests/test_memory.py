@@ -1,22 +1,30 @@
-from types import SimpleNamespace
-
 from ai_furby.assistant import PERSONA, Assistant, split_fact, split_mood
-from ai_furby.config import DEFAULT_CLAUDE_MODEL, Settings
+from ai_furby.config import Settings
 from ai_furby.memory import FactStore
 from ai_furby.voice_loop import memory_command, remembered_fact
 
-SETTINGS = Settings(furby_address=None, furby_connect_timeout=10.0, claude_model=DEFAULT_CLAUDE_MODEL)
+SETTINGS = Settings(furby_address=None, furby_connect_timeout=10.0, mistral_api_key="test-key")
+
+
+class _Response:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return {"choices": [{"message": {"role": "assistant", "content": self._text}}]}
 
 
 class RecordingClient:
     def __init__(self, text: str = "Okay.") -> None:
         self.systems: list[str] = []
         self.text = text
-        self.messages = self
 
-    def create(self, **kwargs):
-        self.systems.append(kwargs["system"])
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text=self.text)])
+    def post(self, url, headers=None, json=None, **_kwargs):
+        self.systems.append(json["messages"][0]["content"])
+        return _Response(self.text)
 
 
 def test_facts_persist_across_stores(tmp_path):

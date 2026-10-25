@@ -70,7 +70,7 @@ def record_utterance(
     with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=device) as stream:
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
-            samples = data[:, 0].copy()
+            samples = remove_offset(data[:, 0].copy())
             level = float(np.sqrt(np.mean(np.square(samples))))
             if not speaking:
                 recent_levels.append(level)
@@ -99,6 +99,13 @@ def record_utterance(
     if not captured:
         return np.zeros(0, dtype=np.float32)
     return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
+
+
+def remove_offset(samples: np.ndarray) -> np.ndarray:
+    """Removes a steady DC offset from a block of audio. Some mics add one, which inflates the measured level."""
+    if samples.size == 0:
+        return samples
+    return samples - float(np.mean(samples))
 
 
 def _adaptive_threshold(minimum: float, recent_levels: deque[float]) -> float:

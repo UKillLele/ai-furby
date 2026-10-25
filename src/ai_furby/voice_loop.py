@@ -20,7 +20,9 @@ from ai_furby.text_to_speech import TextToSpeech
 
 log = logging.getLogger(__name__)
 
-STOP_PHRASES = ("goodbye furby", "bye furby", "stop listening")
+STOP_PHRASES = ("stop listening",)
+STOP_GREETINGS = ("goodbye", "good bye", "bye")
+STOP_NAMES = ("furby", "kirby", "fury", "furry", "ferby", "firby", "furbie", "furbee", "turby", "burby")
 
 
 def memory_command(heard: str) -> tuple[str, str] | None:
@@ -68,9 +70,15 @@ def remembered_fact(heard: str) -> str | None:
 
 
 def is_stop_phrase(heard: str) -> bool:
-    """Ignores case, punctuation, and extra spaces, so "Goodbye, Furby!" matches."""
-    words = re.sub(r"[^a-z ]", " ", heard.lower())
-    return " ".join(words.split()) in STOP_PHRASES
+    """Ignores case, punctuation, and extra spaces, so "Goodbye, Furby!" matches.
+
+    The transcriber often hears the name as a similar word ("Kirby"), so those count too.
+    A bare "goodbye" never stops the Furby, since it's easy to say by accident.
+    """
+    normalized = " ".join(re.sub(r"[^a-z ]", " ", heard.lower()).split())
+    if normalized in STOP_PHRASES:
+        return True
+    return any(f"{greeting} {name}" == normalized for greeting in STOP_GREETINGS for name in STOP_NAMES)
 LISTENING_COLOR = (0, 255, 0)
 # Room echo of Furby's own voice fades after playback ends; wait so the mic does not hear and answer it.
 ECHO_SETTLE_SECONDS = 1.0
@@ -82,7 +90,7 @@ WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for someth
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
 SPEAKING_COLOR = (0, 0, 255)
-THINKING_COLOR = (255, 160, 0)  # amber while Claude is working on a reply
+THINKING_COLOR = (255, 160, 0)  # amber while the assistant is working on a reply
 
 
 async def run(settings: Settings) -> None:
@@ -117,6 +125,12 @@ async def run(settings: Settings) -> None:
         if furby is not None:
             mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
             stack.callback(mask_task.cancel)
+        if furby is not None and settings.web_port and settings.web_token:
+            from ai_furby.web_ui import serve as serve_phone_page
+
+            page_task = asyncio.create_task(serve_phone_page(furby, settings.web_port, settings.web_token))
+            stack.callback(page_task.cancel)
+            print("Phone page: http://furby.local/ (on the Pi; use the computer's address elsewhere)")
         while True:
             if mask_worn.is_set():
                 # Asleep while the mask is on: ignore the wake word, antenna, and speech until it's removed.
@@ -196,7 +210,7 @@ async def run(settings: Settings) -> None:
                     facts.save(key, text)
                     print(f"(learned: {text})")
             except Exception as error:  # a failed API call should not end the conversation
-                log.exception("Claude request failed")
+                log.exception("Assistant request failed")
                 print(f"Furby: (could not think of a reply: {type(error).__name__})")
                 await _set_antenna(furby, (0, 0, 0))
                 continue
@@ -254,7 +268,8 @@ async def _say_goodbye(furby, tts, audio, settings: Settings) -> None:
     """Furby says goodbye out loud, then the speech settles before the mic opens again."""
     try:
         speech = await asyncio.to_thread(tts.synthesize, "Bye for now!")
-        await asyncio.to_thread(audio.play, speech, tts.sample_rate, settings.speaker_device)
+        seconds = len(speech) / tts.sample_rate
+        await _speak_with_movement(furby, "sleepy", audio, speech, tts.sample_rate, seconds, settings.speaker_device)
     except Exception:  # a speaker problem should not stop the goodbye
         log.warning("Could not play the goodbye", exc_info=True)
     await asyncio.sleep(ECHO_SETTLE_SECONDS)

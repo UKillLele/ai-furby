@@ -1,4 +1,4 @@
-"""Claude-backed conversation for the Furby. Keeps short-term history and a persona prompt."""
+"""Mistral-backed conversation for the Furby. Keeps short-term history and a persona prompt."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ai_furby.config import Settings
+from ai_furby.mistral import API_BASE, auth_headers
 
 PERSONA = (
     "You are Furby, a small, cheerful companion that lives on a desk. "
@@ -52,22 +53,13 @@ def split_mood(raw: str) -> tuple[str, str | None]:
 
 
 class Assistant:
-    """Wraps the Anthropic client. `client` can be injected so tests run without network access."""
+    """`client` can be injected so tests run without network access. It needs a `post` method like httpx."""
 
     def __init__(self, settings: Settings, client: Any | None = None, facts: Any | None = None) -> None:
-        self._model = settings.claude_model
-        if client is None:
-            import os
-
-            if not os.environ.get("ANTHROPIC_API_KEY"):
-                raise RuntimeError(
-                    "ANTHROPIC_API_KEY is not set in this terminal. Open a new terminal after setting it, "
-                    "or check that it is set as a user environment variable."
-                )
-            import anthropic  # imported lazily so tests run without the SDK configured
-
-            client = anthropic.Anthropic()
+        self._settings = settings
         self._client = client
+        if client is None:
+            auth_headers(settings)  # fail early with a clear message if the key is missing
         self._facts = facts  # a FactStore, or None when nothing is remembered
         self._history: list[dict[str, str]] = []
         self.last_mood: str | None = None
@@ -75,14 +67,20 @@ class Assistant:
 
     def reply(self, user_text: str) -> str:
         self._history.append({"role": "user", "content": user_text})
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=300,
-            system=self._system_prompt(),
-            messages=self._history[-MAX_HISTORY_MESSAGES:],
-            output_config={"effort": "low"},
+        messages = [{"role": "system", "content": self._system_prompt()}, *self._history[-MAX_HISTORY_MESSAGES:]]
+        client = self._client
+        if client is None:
+            import httpx  # lazy: keeps imports light when the network is not used
+
+            client = httpx
+        response = client.post(
+            f"{API_BASE}/chat/completions",
+            headers=auth_headers(self._settings),
+            json={"model": self._settings.chat_model, "max_tokens": 300, "messages": messages},
+            timeout=60,
         )
-        raw = "".join(block.text for block in response.content if block.type == "text").strip()
+        response.raise_for_status()
+        raw = response.json()["choices"][0]["message"]["content"].strip()
         raw, self.last_fact = split_fact(raw)
         text, self.last_mood = split_mood(raw)
         self._history.append({"role": "assistant", "content": raw})
