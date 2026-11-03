@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from collections import deque
 
 import numpy as np
@@ -38,6 +39,58 @@ def find_device(name_part: str, kind: str) -> int | None:
     return min(matches)[1] if matches else None
 
 
+ARECORD_RATE = 48000  # the voiceHAT card records at this rate; arecord does not resample for us
+
+
+def is_alsa_device(device: str | int | None) -> bool:
+    """True for names like `plughw:2,0`, which mean an ALSA card to read with arecord."""
+    return isinstance(device, str) and device.startswith(("plughw:", "hw:"))
+
+
+def capture_rate(device: str | int | None) -> int:
+    if is_alsa_device(device):
+        return ARECORD_RATE
+    return int(sd.query_devices(device, kind="input")["default_samplerate"])
+
+
+def open_microphone(device: str | int | None, rate: int, block: int):
+    """A context manager whose `read(block)` returns (samples, overflowed), like sd.InputStream.
+
+    PortAudio can't reach some ALSA cards on the Pi, so those are read through arecord instead.
+    """
+    if is_alsa_device(device):
+        return _ArecordStream(device, rate, block)
+    return sd.InputStream(samplerate=rate, channels=1, dtype="float32", blocksize=block, device=device)
+
+
+class _ArecordStream:
+    def __init__(self, device: str, rate: int, block: int) -> None:
+        self._device = device
+        self._rate = rate
+        self._block = block
+        self._process: subprocess.Popen | None = None
+
+    def __enter__(self) -> "_ArecordStream":
+        command = ["arecord", "-q", "-D", self._device, "-f", "S32_LE", "-r", str(self._rate), "-c", "1", "-t", "raw"]
+        self._process = subprocess.Popen(command, stdout=subprocess.PIPE)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._process is not None:
+            self._process.terminate()
+            self._process.wait()
+
+    def read(self, frames: int) -> tuple[np.ndarray, bool]:
+        raw = self._process.stdout.read(frames * 4)
+        if len(raw) < frames * 4:
+            raise RuntimeError(f"arecord stopped on {self._device}; check MIC_DEVICE and that nothing else holds the card")
+        return _s32_to_float(raw).reshape(-1, 1), False
+
+
+def _s32_to_float(raw: bytes) -> np.ndarray:
+    return np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
+
+
 def record_utterance(
     threshold: float = 0.01,
     silence_seconds: float = 1.0,
@@ -49,13 +102,13 @@ def record_utterance(
 
     Returns an empty array if no speech starts within `wait_seconds`.
     """
-    if isinstance(device, str):
+    if isinstance(device, str) and not is_alsa_device(device):
         device = find_input_device(device)
         if device is None:
             raise RuntimeError(f"No input device matches {device!r}; list devices with sounddevice.query_devices()")
 
     # WASAPI often refuses 16 kHz, so capture at the device's own rate and resample afterwards.
-    device_rate = int(sd.query_devices(device, kind="input")["default_samplerate"])
+    device_rate = capture_rate(device)
     block = int(device_rate * BLOCK_SECONDS)
     silent_blocks_to_stop = int(silence_seconds / BLOCK_SECONDS)
     max_blocks = int(max_seconds / BLOCK_SECONDS)
@@ -67,7 +120,7 @@ def record_utterance(
     speaking = False
     silent_run = 0
 
-    with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=device) as stream:
+    with open_microphone(device, device_rate, block) as stream:
         for index in range(max_blocks + wait_blocks):
             data, _overflowed = stream.read(block)
             samples = remove_offset(data[:, 0].copy())

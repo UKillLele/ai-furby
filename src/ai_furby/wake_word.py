@@ -8,10 +8,9 @@ from math import gcd
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
 from scipy.signal import resample_poly
 
-from ai_furby.audio import find_input_device, remove_offset
+from ai_furby.audio import capture_rate, find_input_device, is_alsa_device, open_microphone, remove_offset
 
 MODEL_RATE = 16000  # openWakeWord expects 16 kHz audio
 FRAME_SECONDS = 0.08  # openWakeWord scores audio in 80 ms frames (1280 samples at 16 kHz)
@@ -29,15 +28,20 @@ class WakeWordListener:
 
         self._model = Model(wakeword_models=[str(model_path)], inference_framework="onnx")
         self._threshold = threshold
-        self._device = find_input_device(device) if device else None
+        if not device:
+            self._device = None
+        elif is_alsa_device(device):
+            self._device = device
+        else:
+            self._device = find_input_device(device)
 
     def wait_for_wake(self, timeout: float | None = None, stop: threading.Event | None = None) -> bool:
         """Blocks until the wake word is heard. Returns False if `timeout` passes or `stop` is set first."""
-        device_rate = int(sd.query_devices(self._device, kind="input")["default_samplerate"])
+        device_rate = capture_rate(self._device)
         block = int(device_rate * FRAME_SECONDS)
         deadline = None if timeout is None else time.monotonic() + timeout
         self._model.reset()
-        with sd.InputStream(samplerate=device_rate, channels=1, dtype="float32", blocksize=block, device=self._device) as stream:
+        with open_microphone(self._device, device_rate, block) as stream:
             while (deadline is None or time.monotonic() < deadline) and not (stop and stop.is_set()):
                 data, _overflowed = stream.read(block)
                 frame = _to_model_rate(remove_offset(data[:, 0]), device_rate)
