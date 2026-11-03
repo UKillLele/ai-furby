@@ -28,6 +28,8 @@ MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 SPEECH_HIGHPASS_HZ = 300.0  # loudness is judged above this; motor rumble and room hum sit below the voice band
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 MIC_STALL_SECONDS = 3.0  # with no audio for this long, the microphone is reopened
+SPEECH_END_SECONDS = 1.5  # after speech stops, the mic stays open this long so a restart still counts
+MAX_UTTERANCE_SECONDS = 30.0  # a safety cap on one recording, even if speech never stops
 
 
 def find_input_device(name_part: str) -> int | None:
@@ -186,30 +188,43 @@ def record_utterance(
 ) -> np.ndarray:
     """Listens on `feed` and returns mono float32 audio at 16 kHz, or an empty array if no speech came.
 
-    One window timer runs from the start of the call. The first confirmed speech restarts it, and the microphone
-    stays on until the window runs out, so pauses inside the window don't end the recording.
+    `window_seconds` is how long to wait for speech to begin. Once speech begins, recording continues until it
+    has stopped for SPEECH_END_SECONDS, so a pause followed by more speech keeps going (up to MAX_UTTERANCE_SECONDS).
     `on_speech_start` runs once, from this thread, when speech is confirmed.
     """
     device_rate = feed.rate
-    deadline = time.monotonic() + window_seconds
+    start = time.monotonic()
+    speech_deadline = start + window_seconds
+    max_deadline = start + MAX_UTTERANCE_SECONDS
+    silent_blocks_to_stop = int(SPEECH_END_SECONDS / BLOCK_SECONDS)
 
     captured: list[np.ndarray] = []
     recent_levels: deque[float] = deque(maxlen=NOISE_WINDOW_BLOCKS)
     pending: list[np.ndarray] = []  # loud blocks that may be the start of speech, not yet confirmed
     speaking = False
+    silent_run = 0
     speech_filter = butter(2, SPEECH_HIGHPASS_HZ, btype="highpass", fs=device_rate, output="sos")
     filter_state = sosfilt_zi(speech_filter) * 0.0
 
-    while time.monotonic() < deadline:
+    while True:
+        now = time.monotonic()
+        if now >= max_deadline or (not speaking and now >= speech_deadline):
+            break
         samples = remove_offset(_next_block(feed))
-        if speaking:
-            captured.append(samples)
-            continue
         filtered, filter_state = sosfilt(speech_filter, samples, zi=filter_state)
         level = float(np.sqrt(np.mean(np.square(filtered))))
-        recent_levels.append(level)
+        if not speaking:
+            recent_levels.append(level)
         # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
         loud = level > _adaptive_threshold(threshold, recent_levels)
+
+        if speaking:
+            captured.append(samples)
+            silent_run = 0 if loud else silent_run + 1
+            if silent_run >= silent_blocks_to_stop:
+                break  # speech has stopped for long enough
+            continue
+
         if not loud:
             pending.clear()
             continue
@@ -219,7 +234,6 @@ def record_utterance(
             speaking = True
             captured.extend(pending)
             pending.clear()
-            deadline = time.monotonic() + window_seconds  # speech restarts the window
             if on_speech_start is not None:
                 on_speech_start()
 

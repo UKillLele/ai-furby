@@ -149,7 +149,7 @@ async def _learn_device(address: str) -> None:
     from bleak import BleakScanner
 
     with contextlib.suppress(Exception):
-        await BleakScanner.find_device_by_address(address, timeout=2.0)  # returns as soon as the Furby is seen
+        await BleakScanner.find_device_by_address(address, timeout=6.0)  # returns as soon as the Furby is seen
 
 
 async def _clear_stale_link(address: str | None) -> bool:

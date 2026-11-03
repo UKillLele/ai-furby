@@ -97,7 +97,7 @@ ASK_PROMPT = (
 )
 AWAKE_FALLBACK = "I'm awake! What would you like to talk about?"  # used if Mistral can't make the question
 READY_RATE = 16000  # sample rate of the ready chime
-WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
+WAKE_FOLLOW_UP_SECONDS = 3.0  # after the wake word, how long to wait for speech to begin before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
