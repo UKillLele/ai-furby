@@ -21,6 +21,7 @@ MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
+MIN_UTTERANCE_SECONDS = 0.6  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 
 
@@ -195,7 +196,10 @@ def record_utterance(
 
     if not captured:
         return np.zeros(0, dtype=np.float32)
-    return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
+    speech = np.concatenate(captured)
+    if speech.size < MIN_UTTERANCE_SECONDS * device_rate:
+        return np.zeros(0, dtype=np.float32)  # too short to be speech; nothing to send
+    return _resample(speech, device_rate, INPUT_SAMPLE_RATE)
 
 
 def _next_block(feed: MicFeed) -> np.ndarray:
