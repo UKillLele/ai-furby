@@ -190,8 +190,10 @@ async def run(settings: Settings) -> None:
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
-                # Background noise can pass the mic threshold without any words. That must not keep the
-                # conversation open, or the Furby never goes back to sleep.
+                # Background noise, such as the Furby's own movement, can pass the mic threshold without any words.
+                # Keep listening until the quiet period since the last real speech runs out, then go back to sleep.
+                if conversing and time.monotonic() - last_speech < FOLLOW_UP_SECONDS:
+                    continue
                 conversing = False
                 continue
             print(f"You: {heard}")
