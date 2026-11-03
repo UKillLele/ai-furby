@@ -133,7 +133,8 @@ async def run(settings: Settings) -> None:
             page_task = asyncio.create_task(serve_phone_page(furby, settings.web_port, settings.web_token))
             stack.callback(page_task.cancel)
             print("Phone page: http://furby.local/ (on the Pi; use the computer's address elsewhere)")
-        # Antenna lights for a few seconds to show the program has started, then goes dark until the wake word.
+        # Eyes and antenna light for a few seconds to show the program has started, then go dark until the wake word.
+        await _wake_up(furby)
         await _set_antenna(furby, LISTENING_COLOR)
         await asyncio.sleep(BOOT_ANTENNA_SECONDS)
         await _set_antenna(furby, (0, 0, 0))
