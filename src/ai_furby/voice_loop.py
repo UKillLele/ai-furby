@@ -91,6 +91,11 @@ BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the pr
 LINK_RETRY_SECONDS = 5.0  # while the Furby is out of contact, try to reconnect this often
 LINK_RETRY_WINDOW_SECONDS = 30.0  # for this long after the prompt, before going quiet until the link is back
 LINK_PROMPT = "Hello, I'm Furby. Please touch my antenna so I can connect."
+ASK_PROMPT = (
+    "You have just woken up and reconnected. Say that you are awake, then ask me one short, random, friendly "
+    "question to start a conversation. Reply with only what you would say out loud."
+)
+AWAKE_FALLBACK = "I'm awake! What would you like to talk about?"  # used if Mistral can't make the question
 READY_RATE = 16000  # sample rate of the ready chime
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
@@ -135,10 +140,11 @@ async def run(settings: Settings) -> None:
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
         listen_until = 0.0  # the listening window ends at this time; the antenna is green for exactly that window
         mask_worn = asyncio.Event()  # set while the sleep mask is on; nothing wakes the Furby until it's removed
+        link_back = asyncio.Event()  # set when the Furby reconnects; the wake wait then asks a question without the wake word
         if furby is not None:
             mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
             stack.callback(mask_task.cancel)
-            link_task = asyncio.create_task(_watch_link(furby, tts, audio, settings))
+            link_task = asyncio.create_task(_watch_link(furby, tts, audio, settings, link_back))
             stack.callback(link_task.cancel)
         if furby is not None and settings.web_port and settings.web_token:
             from ai_furby.web_ui import serve as serve_phone_page
@@ -170,11 +176,17 @@ async def run(settings: Settings) -> None:
             woke_by = None  # "voice" or "antenna" right after a wake; None otherwise
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
-                woke_by = await _wait_for_wake_word_or_antenna(wake, mic, furby)
+                link_back.clear()  # only a reconnect during this wait counts
+                woke_by = await _wait_for_wake_word_or_antenna(wake, mic, furby, link_back)
                 print(f"(woken by {woke_by})")
                 log.info("Furby is awake (woken by %s); eyes on", woke_by)
                 await _wake_up(furby)
-                if woke_by == "antenna":
+                if woke_by == "link":
+                    await _ask_random_question(assistant, tts, audio, settings)
+                    conversing = True
+                    listen_until = time.monotonic() + FOLLOW_UP_SECONDS
+                    woke_by = None  # the question already answered the wake
+                elif woke_by == "antenna":
                     await _greet(furby, tts, audio, settings)
                     conversing = True
                     listen_until = time.monotonic() + FOLLOW_UP_SECONDS
@@ -333,18 +345,36 @@ async def _go_to_sleep(furby: FurbyRemote | None) -> None:
         log.warning("Could not put the Furby to sleep", exc_info=True)
 
 
-async def _wait_for_wake_word_or_antenna(wake, mic, furby: FurbyRemote | None) -> str:
-    """Returns "voice" when the wake word is heard or "antenna" when the antenna is touched, whichever comes first."""
+async def _wait_for_wake_word_or_antenna(wake, mic, furby: FurbyRemote | None, link_back: asyncio.Event) -> str:
+    """Returns "voice" for the wake word, "antenna" for an antenna touch, or "link" when the Furby reconnects.
+    Whichever comes first wins."""
     stop = threading.Event()
     voice = asyncio.create_task(asyncio.to_thread(wake.wait_for_wake, mic, None, stop))
     touch = asyncio.create_task(_antenna_touched(furby))
+    linked = asyncio.create_task(link_back.wait())
     try:
-        done, _pending = await asyncio.wait({voice, touch}, return_when=asyncio.FIRST_COMPLETED)
+        done, _pending = await asyncio.wait({voice, touch, linked}, return_when=asyncio.FIRST_COMPLETED)
     finally:
         stop.set()
         touch.cancel()
-        await asyncio.gather(voice, touch, return_exceptions=True)
-    return "voice" if voice in done else "antenna"
+        linked.cancel()
+        await asyncio.gather(voice, touch, linked, return_exceptions=True)
+    if voice in done:
+        return "voice"
+    if linked in done:
+        return "link"
+    return "antenna"
+
+
+async def _ask_random_question(assistant, tts, audio, settings: Settings) -> None:
+    """After a reconnect, Furby says it is awake and asks a random question that Mistral makes up."""
+    try:
+        text = await asyncio.to_thread(assistant.reply, ASK_PROMPT)
+    except Exception:  # a failed API call should still let Furby greet
+        log.warning("Could not generate the awake question", exc_info=True)
+        text = AWAKE_FALLBACK
+    print(f"Furby: {text}")
+    await _say(text, tts, audio, settings)
 
 
 async def _greet(furby, tts, audio, settings: Settings) -> None:
@@ -384,7 +414,7 @@ def _ready_chime() -> np.ndarray:
     return np.concatenate(pieces)
 
 
-async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings) -> None:
+async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings, link_back: asyncio.Event) -> None:
     """At startup, and whenever the Furby drops out of reach: asks for an antenna touch out loud and retries
     the connection every few seconds for a while."""
     while not furby.link_reported:
@@ -403,6 +433,7 @@ async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings) -> Non
         while not furby.link_up:
             await asyncio.sleep(1.0)
         print("(Furby reconnected)")
+        link_back.set()  # the next wake wait asks a question without needing the wake word
 
 
 async def _watch_sleep_mask(furby: FurbyRemote, mask_worn: asyncio.Event) -> None:
