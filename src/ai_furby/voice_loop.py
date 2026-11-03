@@ -90,7 +90,7 @@ FOLLOW_UP_SECONDS = 20.0
 BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the program is running
 LINK_RETRY_SECONDS = 5.0  # while the Furby is out of contact, try to reconnect this often
 LINK_RETRY_WINDOW_SECONDS = 30.0  # for this long after the prompt, before going quiet until the link is back
-LINK_PROMPT = "Please touch my antenna so I can connect."
+LINK_PROMPT = "Hello, I'm Furby. Please touch my antenna so I can connect."
 READY_RATE = 16000  # sample rate of the ready chime
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
@@ -254,20 +254,21 @@ async def run(settings: Settings) -> None:
             print(f"Furby: {reply}")
             log.info("Mood: %s", assistant.last_mood)
 
-            speech = await asyncio.to_thread(tts.synthesize, reply)  # amber stays on until the speech is ready
-            seconds = len(speech) / tts.sample_rate
-            await asyncio.sleep(MIC_RELEASE_SECONDS)
-            await _set_antenna(furby, SPEAKING_COLOR)  # blue while the response plays
+            # Whatever happens to the speech, the listening window opens afterwards, so the mic and green light come back.
             try:
+                speech = await asyncio.to_thread(tts.synthesize, reply)  # amber stays on until the speech is ready
+                seconds = len(speech) / tts.sample_rate
+                await asyncio.sleep(MIC_RELEASE_SECONDS)
+                await _set_antenna(furby, SPEAKING_COLOR)  # blue while the response plays
                 if movement is not None and not movement.done():
                     movement.cancel()  # a new reply replaces the previous movement
                 movement = await _speak_with_movement(
                     furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
                 )
-                listen_until = time.monotonic() + FOLLOW_UP_SECONDS  # the green listening window opens after the reply
-            except Exception as error:  # a speaker problem should not end the conversation
-                log.exception("Playback failed")
-                print(f"(could not play speech: {type(error).__name__}; check the speakers)")
+            except Exception as error:  # a speech or speaker problem should not end the conversation
+                log.exception("Reply playback failed")
+                print(f"(could not play speech: {type(error).__name__}; check the speech service and speakers)")
+            listen_until = time.monotonic() + FOLLOW_UP_SECONDS  # the green listening window opens after the reply
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 
