@@ -30,6 +30,7 @@ def run_worker(commands: Any, settings: Settings, events: Any | None = None) -> 
 
 
 RECONNECT_SECONDS = 10.0  # how often to look for a Furby that is asleep or out of range
+STARTUP_CONNECT_SECONDS = 5.0  # the first connection at startup; short, so the startup prompt is not held back
 
 
 async def _reapply_eyes(furby: FurbyController, state: dict[str, bool]) -> None:
@@ -82,7 +83,7 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
     furby = FurbyController(settings)
     connected = True
     try:
-        await furby.connect(retries=1)  # one quick try, so the startup prompt isn't held back; the reconnect loop keeps going
+        await furby.connect(retries=1, timeout=STARTUP_CONNECT_SECONDS)  # the reconnect loop keeps trying after this
     except Exception:
         connected = False
         log.warning("Could not connect to the Furby yet; will keep trying", exc_info=True)
@@ -96,6 +97,7 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
         # Sleep mask on/off: the Furby sends these as GeneralPlus notifications (20:13 added, 20:14 removed).
         furby._client.add_gp_callback(lambda data: _forward_mask(data, events))
 
+    manual_reconnect: asyncio.Task | None = None  # the reconnect requested by the parent, while one is running
     while True:
         command = await asyncio.to_thread(commands.get)
         if command is None:
@@ -112,7 +114,9 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
                 state["eyes_on"] = bool(args[0])
                 await furby.set_backlight(*args)
             elif kind == "reconnect":
-                await _reconnect_if_needed(furby, state)
+                # Runs in the background so a slow attempt doesn't hold up later commands or queue up more attempts.
+                if manual_reconnect is None or manual_reconnect.done():
+                    manual_reconnect = asyncio.create_task(_reconnect_if_needed(furby, state))
             else:
                 log.warning("Unknown Furby command %r", kind)
         except Exception:  # one failed command should not stop the others

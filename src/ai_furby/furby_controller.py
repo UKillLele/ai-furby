@@ -49,23 +49,23 @@ class FurbyController:
     def connected(self) -> bool:
         return bool(getattr(self._client, "connected", True))
 
-    async def connect(self, retries: int = 3) -> None:
+    async def connect(self, retries: int = 3, timeout: float | None = None) -> None:
         async with self._connect_lock:
             try:
-                await self._connect_once(retries)
+                await self._connect_once(retries, timeout)
             except RuntimeError as error:
                 # After the Furby restarts, BlueZ can still hold the old link, which hides it from the scan.
                 # Clear that link and try once more.
                 if "was not found" not in str(error) or not await _clear_stale_link(self._settings.furby_address):
                     raise
-                await self._connect_once(retries)
+                await self._connect_once(retries, timeout)
 
-    async def _connect_once(self, retries: int) -> None:
+    async def _connect_once(self, retries: int, timeout: float | None) -> None:
         if self._settings.furby_address and sys.platform.startswith("linux"):
             await _learn_device(self._settings.furby_address)
         await self._client.connect(
             address=self._settings.furby_address,
-            timeout=self._settings.furby_connect_timeout,
+            timeout=timeout if timeout is not None else self._settings.furby_connect_timeout,
             retries=retries,
         )
 
