@@ -176,6 +176,8 @@ class MicFeed:
                     self._blocks.put_nowait(data[:, 0].copy())
                     self._last_block = time.monotonic()
         except Exception as error:  # reported to the next reader instead of stopping silently
+            if not self._running.is_set():
+                return  # closed on purpose (a restart or stop), so the reader ending is expected
             self._error = error
             log.exception("Microphone feed stopped")
 
