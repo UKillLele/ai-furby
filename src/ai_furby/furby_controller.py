@@ -153,7 +153,7 @@ async def _learn_device(address: str) -> None:
     from bleak import BleakScanner
 
     with contextlib.suppress(Exception):
-        await BleakScanner.find_device_by_address(address, timeout=8.0)
+        await BleakScanner.find_device_by_address(address, timeout=4.0)
 
 
 async def _clear_stale_link(address: str | None) -> bool:

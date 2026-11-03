@@ -82,7 +82,7 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
     furby = FurbyController(settings)
     connected = True
     try:
-        await furby.connect()
+        await furby.connect(retries=1)  # one quick try, so the startup prompt isn't held back; the reconnect loop keeps going
     except Exception:
         connected = False
         log.warning("Could not connect to the Furby yet; will keep trying", exc_info=True)
