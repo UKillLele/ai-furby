@@ -26,7 +26,6 @@ NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 SPEECH_HIGHPASS_HZ = 300.0  # loudness is judged above this; motor rumble and room hum sit below the voice band
-MIN_UTTERANCE_SECONDS = 0.4  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 MIC_STALL_SECONDS = 3.0  # with no audio for this long, the microphone is reopened
 
@@ -182,65 +181,51 @@ class MicFeed:
 def record_utterance(
     feed: MicFeed,
     threshold: float = 0.01,
-    silence_seconds: float = 1.0,
-    max_seconds: float = 15.0,
-    wait_seconds: float = 30.0,
+    window_seconds: float = 10.0,
     on_speech_start: Callable[[], None] | None = None,
 ) -> np.ndarray:
-    """Waits for speech on `feed`, records until a pause, and returns mono float32 audio at 16 kHz.
+    """Listens on `feed` and returns mono float32 audio at 16 kHz, or an empty array if no speech came.
 
+    One window timer runs from the start of the call. The first confirmed speech restarts it, and the microphone
+    stays on until the window runs out, so pauses inside the window don't end the recording.
     `on_speech_start` runs once, from this thread, when speech is confirmed.
-    Returns an empty array if no speech starts within `wait_seconds`.
     """
     device_rate = feed.rate
-    silent_blocks_to_stop = int(silence_seconds / BLOCK_SECONDS)
-    max_blocks = int(max_seconds / BLOCK_SECONDS)
-    wait_blocks = int(wait_seconds / BLOCK_SECONDS)
+    deadline = time.monotonic() + window_seconds
 
     captured: list[np.ndarray] = []
     recent_levels: deque[float] = deque(maxlen=NOISE_WINDOW_BLOCKS)
     pending: list[np.ndarray] = []  # loud blocks that may be the start of speech, not yet confirmed
     speaking = False
-    silent_run = 0
     speech_filter = butter(2, SPEECH_HIGHPASS_HZ, btype="highpass", fs=device_rate, output="sos")
     filter_state = sosfilt_zi(speech_filter) * 0.0
 
-    for index in range(max_blocks + wait_blocks):
+    while time.monotonic() < deadline:
         samples = remove_offset(_next_block(feed))
+        if speaking:
+            captured.append(samples)
+            continue
         filtered, filter_state = sosfilt(speech_filter, samples, zi=filter_state)
         level = float(np.sqrt(np.mean(np.square(filtered))))
-        if not speaking:
-            recent_levels.append(level)
+        recent_levels.append(level)
         # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
         loud = level > _adaptive_threshold(threshold, recent_levels)
-
-        if not speaking:
-            if index >= wait_blocks:
-                break
-            if not loud:
-                pending.clear()
-                continue
-            pending.append(samples)
-            # Short clicks and bumps are loud for only a block or two; require a sustained burst before starting.
-            if len(pending) >= MIN_SPEECH_BLOCKS:
-                speaking = True
-                captured.extend(pending)
-                pending.clear()
-                if on_speech_start is not None:
-                    on_speech_start()
+        if not loud:
+            pending.clear()
             continue
-
-        captured.append(samples)
-        silent_run = 0 if loud else silent_run + 1
-        if silent_run >= silent_blocks_to_stop:
-            break
+        pending.append(samples)
+        # Short clicks and bumps are loud for only a block or two; require a sustained burst before starting.
+        if len(pending) >= MIN_SPEECH_BLOCKS:
+            speaking = True
+            captured.extend(pending)
+            pending.clear()
+            deadline = time.monotonic() + window_seconds  # speech restarts the window
+            if on_speech_start is not None:
+                on_speech_start()
 
     if not captured:
         return np.zeros(0, dtype=np.float32)
-    speech = np.concatenate(captured)
-    if speech.size < MIN_UTTERANCE_SECONDS * device_rate:
-        return np.zeros(0, dtype=np.float32)  # too short to be speech; nothing to send
-    return _resample(speech, device_rate, INPUT_SAMPLE_RATE)
+    return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
 
 
 def _next_block(feed: MicFeed) -> np.ndarray:
