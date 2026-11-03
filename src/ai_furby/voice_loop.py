@@ -9,6 +9,8 @@ import re
 import threading
 import time
 
+import numpy as np
+
 from ai_furby.antenna_touch import is_input
 from ai_furby.assistant import Assistant
 from ai_furby.config import Settings
@@ -89,6 +91,7 @@ BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the pr
 LINK_RETRY_SECONDS = 5.0  # while the Furby is out of contact, try to reconnect this often
 LINK_RETRY_WINDOW_SECONDS = 30.0  # for this long after the prompt, before going quiet until the link is back
 LINK_PROMPT = "Please touch my antenna so I can connect."
+READY_RATE = 16000  # sample rate of the ready chime
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
@@ -143,6 +146,12 @@ async def run(settings: Settings) -> None:
             page_task = asyncio.create_task(serve_phone_page(furby, settings.web_port, settings.web_token))
             stack.callback(page_task.cancel)
             print("Phone page: http://furby.local/ (on the Pi; use the computer's address elsewhere)")
+        # The chime is the startup signal: it plays once the program is ready to listen, connected or not.
+        print("Furby: ready. Say 'Hey Furby' to start talking.")
+        try:
+            await asyncio.to_thread(audio.play, _ready_chime(), READY_RATE, settings.speaker_device)
+        except Exception:  # a speaker problem should not stop startup
+            log.warning("Could not play the ready chime", exc_info=True)
         # Eyes and antenna light for a few seconds to show the program has started, then go dark until the wake word.
         await _wake_up(furby)
         await _set_antenna(furby, LISTENING_COLOR)
@@ -362,6 +371,16 @@ async def _mouth_for(furby: FurbyRemote, seconds: float) -> None:
         await furby.act_for(pick_mouth_action(), max(seconds, 0.5))
     except Exception:  # a movement failure should not stop the greeting
         log.warning("Could not move the mouth", exc_info=True)
+
+
+def _ready_chime() -> np.ndarray:
+    """Two short rising tones. Needs no network or Bluetooth, so it shows startup has finished either way."""
+    pieces = []
+    for frequency in (880.0, 1320.0):
+        t = np.arange(int(READY_RATE * 0.15)) / READY_RATE
+        pieces.append(0.3 * np.sin(2 * np.pi * frequency * t).astype(np.float32))
+        pieces.append(np.zeros(int(READY_RATE * 0.05), dtype=np.float32))
+    return np.concatenate(pieces)
 
 
 async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings) -> None:
