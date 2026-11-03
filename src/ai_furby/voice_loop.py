@@ -139,6 +139,7 @@ async def run(settings: Settings) -> None:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
         listen_until = 0.0  # the listening window ends at this time; the antenna is green for exactly that window
+        needs_mic_restart = False  # set after playback, which can leave the microphone stalled
         mask_worn = asyncio.Event()  # set while the sleep mask is on; nothing wakes the Furby until it's removed
         link_back = asyncio.Event()  # set when the Furby reconnects; the wake wait then asks a question without the wake word
         if furby is not None:
@@ -183,6 +184,7 @@ async def run(settings: Settings) -> None:
                 await _wake_up(furby)
                 if woke_by == "link":
                     movement = await _ask_random_question(furby, assistant, tts, audio, settings)
+                    needs_mic_restart = True
                     conversing = True
                     listen_until = time.monotonic() + FOLLOW_UP_SECONDS
                     woke_by = None  # the question already answered the wake
@@ -197,6 +199,9 @@ async def run(settings: Settings) -> None:
                 wait = WAKE_FOLLOW_UP_SECONDS
             else:
                 wait = max(0.0, listen_until - time.monotonic()) if conversing else 30.0
+            if needs_mic_restart:
+                await asyncio.to_thread(mic.restart)  # reopen the microphone after playback
+                needs_mic_restart = False
             if woke_by is None:
                 mic.drain()  # drop the Furby's own voice and movement noise; after a wake, keep the audio for the question
             utterance = await asyncio.to_thread(
@@ -281,6 +286,7 @@ async def run(settings: Settings) -> None:
                 log.exception("Reply playback failed")
                 print(f"(could not play speech: {type(error).__name__}; check the speech service and speakers)")
             listen_until = time.monotonic() + FOLLOW_UP_SECONDS  # the green listening window opens after the reply
+            needs_mic_restart = True
             await asyncio.sleep(ECHO_SETTLE_SECONDS)
 
 

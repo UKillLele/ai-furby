@@ -6,6 +6,7 @@ import logging
 import queue
 import subprocess
 import threading
+import time
 from collections import deque
 
 import numpy as np
@@ -26,6 +27,7 @@ MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 SPEECH_HIGHPASS_HZ = 300.0  # loudness is judged above this; motor rumble and room hum sit below the voice band
 MIN_UTTERANCE_SECONDS = 0.4  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
+MIC_STALL_SECONDS = 3.0  # with no audio for this long, the microphone is reopened
 
 
 def find_input_device(name_part: str) -> int | None:
@@ -87,6 +89,10 @@ class _ArecordStream:
             self._process.terminate()
             self._process.wait()
 
+    def kill(self) -> None:
+        if self._process is not None:
+            self._process.kill()
+
     def read(self, frames: int) -> tuple[np.ndarray, bool]:
         raw = self._process.stdout.read(frames * 4)
         if len(raw) < frames * 4:
@@ -113,6 +119,8 @@ class MicFeed:
         self._running = threading.Event()
         self._error: Exception | None = None
         self._thread = threading.Thread(target=self._run, name="mic-feed", daemon=True)
+        self._stream = None
+        self._last_block = time.monotonic()
 
     def start(self) -> None:
         self._running.set()
@@ -122,11 +130,31 @@ class MicFeed:
         self._running.clear()
         self._thread.join(timeout=2)
 
+    def restart(self) -> None:
+        """Closes the microphone and opens it again. Playback can leave the capture stalled, so this runs after each reply."""
+        log.info("Reopening the microphone")
+        self._running.clear()
+        kill = getattr(self._stream, "kill", None)
+        if kill is not None:
+            kill()  # unblocks a reader that is waiting on a stalled capture process
+        self._thread.join(timeout=2)
+        self._error = None
+        self._blocks = queue.Queue(maxsize=MIC_QUEUE_BLOCKS)  # drop audio captured before the restart
+        self._last_block = time.monotonic()
+        self._running.set()
+        self._thread = threading.Thread(target=self._run, name="mic-feed", daemon=True)
+        self._thread.start()
+
     def read(self, timeout: float) -> np.ndarray:
         """The next block of audio. Raises queue.Empty if none arrives within `timeout` seconds."""
         if self._error is not None:
             raise RuntimeError(f"microphone stopped: {self._error}") from self._error
-        return self._blocks.get(timeout=timeout)
+        try:
+            return self._blocks.get(timeout=timeout)
+        except queue.Empty:
+            if time.monotonic() - self._last_block > MIC_STALL_SECONDS:
+                self.restart()  # the capture has stalled; reopen it, then let the caller try again
+            raise
 
     def drain(self) -> None:
         while True:
@@ -138,11 +166,13 @@ class MicFeed:
     def _run(self) -> None:
         try:
             with open_microphone(self._device, self.rate, self.block) as stream:
+                self._stream = stream
                 while self._running.is_set():
                     data, _overflowed = stream.read(self.block)
                     if self._blocks.full():
                         self._blocks.get_nowait()
                     self._blocks.put_nowait(data[:, 0].copy())
+                    self._last_block = time.monotonic()
         except Exception as error:  # reported to the next reader instead of stopping silently
             self._error = error
             log.exception("Microphone feed stopped")
