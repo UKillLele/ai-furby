@@ -27,4 +27,4 @@ def test_antenna_color_is_forwarded():
 
     asyncio.run(remote.set_antenna_color(255, 0, 0))
 
-    assert commands.get() == ("antenna", 255, 0, 0)
+    assert commands.get() == ("antenna", 255, 0, 0, 0)

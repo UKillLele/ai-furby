@@ -117,7 +117,14 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
         kind, *args = command
         try:
             if kind == "antenna":
-                await furby.set_antenna_color(*args)
+                *color, ack_id = args
+                result = "fail"
+                try:
+                    await furby.set_antenna_color(*color)
+                    result = "ok"
+                finally:
+                    if ack_id and events is not None:
+                        events.put(f"ack:{ack_id}:{result}")
             elif kind == "group":
                 await furby.set_group_active(*args)
             elif kind == "action":

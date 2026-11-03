@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import time
 from queue import Empty, Queue
 from typing import Any
 
@@ -21,6 +22,8 @@ class FurbyRemote:
         self._mask_events: list[str] = []
         self._link_up = False  # updated from the worker's "link:up" / "link:down" reports
         self._link_reported = False  # becomes True once the worker has said whether it connected
+        self._acks: dict[int, str] = {}  # results of antenna commands that asked for confirmation ("ok" / "fail")
+        self._next_ack = 0
         if commands is None:
             # "spawn" starts a clean interpreter, so the child does not inherit the audio library.
             context = multiprocessing.get_context("spawn")
@@ -68,7 +71,23 @@ class FurbyRemote:
         self._commands.put(command)
 
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
-        self._send("antenna", red, green, blue)
+        self._send("antenna", red, green, blue, 0)  # 0: no confirmation wanted
+
+    async def set_antenna_confirmed(self, red: int, green: int, blue: int, timeout: float = 3.0) -> bool:
+        """Sets the antenna color and waits for the Furby to confirm it. Returns False if no confirmation arrives in time.
+
+        Readings are drained by the sensor and sleep-mask watchers, which keep running, so this only waits for the result.
+        """
+        self._next_ack += 1
+        ack_id = self._next_ack
+        self._send("antenna", red, green, blue, ack_id)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            result = self._acks.pop(ack_id, None)
+            if result is not None:
+                return result == "ok"
+            await asyncio.sleep(0.05)
+        return False
 
     def drain_sensor_readings(self) -> list[str]:
         """Returns the raw sensor readings received since the last call, without waiting.
@@ -84,6 +103,9 @@ class FurbyRemote:
             if item.startswith("link:"):
                 self._link_up = item == "link:up"
                 self._link_reported = True
+            elif item.startswith("ack:"):
+                _, ack_id, result = item.split(":")
+                self._acks[int(ack_id)] = result
             elif item.startswith("mask:"):
                 self._mask_events.append(item)
             else:

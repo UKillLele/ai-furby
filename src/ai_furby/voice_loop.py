@@ -193,7 +193,14 @@ async def run(settings: Settings) -> None:
                     conversing = True
                     listen_until = time.monotonic() + FOLLOW_UP_SECONDS
                     woke_by = None  # the greeting already answered the wake
-            await _set_antenna(furby, LISTENING_COLOR)
+            if not await _listening_light_on(furby):
+                # No confirmed green light, no microphone. A conversation whose window has run out ends here.
+                if conversing and woke_by is None and time.monotonic() >= listen_until:
+                    print("(quiet for a while; say the wake word to talk again)")
+                    conversing = False
+                    continue
+                await asyncio.sleep(1.0)  # try the green light again shortly
+                continue
             # During a conversation, wait up to FOLLOW_UP_SECONDS for the next thing you say; silence ends it.
             if woke_by == "voice":
                 wait = WAKE_FOLLOW_UP_SECONDS
@@ -501,6 +508,14 @@ async def _wake_up(furby: FurbyRemote | None) -> None:
 
 
 _antenna_tasks: set[asyncio.Task] = set()  # keeps the color commands alive until they finish
+
+
+async def _listening_light_on(furby: FurbyRemote | None) -> bool:
+    """The green light is the signal that the mic is open. Returns True only once the Furby confirms it.
+    With no Furby configured there is no light to confirm, so the mic is allowed."""
+    if furby is None:
+        return True
+    return await furby.set_antenna_confirmed(*LISTENING_COLOR)
 
 
 async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:
