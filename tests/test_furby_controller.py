@@ -107,12 +107,14 @@ def test_reconnects_and_retries_when_link_dropped():
             events.append("action")
 
     controller = FurbyController(SETTINGS, client_factory=Dropping)
-    run(controller.trigger_action(9, 0, 0, 6))
+    with pytest.raises(RuntimeError, match="Not connected"):
+        run(controller.trigger_action(9, 0, 0, 6))
 
-    assert events == ["dropped", "disconnect", "connect", "action"]
+    # The command does not reconnect itself; the worker's reconnect checks do that.
+    assert events == ["dropped"]
 
 
-def test_command_reconnects_with_a_single_quick_attempt():
+def test_command_fails_fast_when_link_is_down():
     retries_seen: list[int] = []
 
     class Dropping(FakeFurby):
@@ -129,9 +131,10 @@ def test_command_reconnects_with_a_single_quick_attempt():
                 raise RuntimeError("Not connected to Furby")
 
     controller = FurbyController(SETTINGS, client_factory=Dropping)
-    run(controller.trigger_action(9, 0, 0, 6))
+    with pytest.raises(RuntimeError, match="Not connected"):
+        run(controller.trigger_action(9, 0, 0, 6))
 
-    assert retries_seen == [1]
+    assert retries_seen == []  # a dropped link fails the command at once, without a connect attempt
 
 
 def test_reconnect_check_connects_when_disconnected_and_reports_once(capsys):

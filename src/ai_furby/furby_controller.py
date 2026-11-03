@@ -78,21 +78,12 @@ class FurbyController:
         await self._client.disconnect()
 
     async def _write(self, operation: Callable[[], Awaitable[None]]) -> None:
-        """Runs one command. If the link has dropped, make one quick reconnect and try once more.
+        """Runs one command. If the link is down, the error goes straight back to the caller.
 
-        The background check in the worker keeps retrying the connection, so a command should not wait for the
-        full retry sequence. If the Furby is still unreachable, the error goes back to the caller.
+        The worker's reconnect checks do the connecting. A command that tried to connect as well would hold the
+        connection lock for many seconds and hold up every retry behind it.
         """
-        try:
-            await operation()
-        except RuntimeError as error:
-            if "Not connected" not in str(error):
-                raise
-            log.info("Furby link dropped; reconnecting")
-            with contextlib.suppress(Exception):
-                await self._client.disconnect()
-            await self.connect(retries=1)
-            await operation()
+        await operation()
 
     async def set_antenna_color(self, red: int, green: int, blue: int) -> None:
         _check_channel("red", red)
