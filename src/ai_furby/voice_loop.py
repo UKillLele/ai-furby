@@ -188,6 +188,7 @@ async def run(settings: Settings) -> None:
                 conversing = False
                 continue
             conversing = True
+            await _set_antenna(furby, THINKING_COLOR)  # amber while Mistral transcribes and answers
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
@@ -218,7 +219,6 @@ async def run(settings: Settings) -> None:
                     continue  # back to waiting for the wake word
                 break
 
-            await _set_antenna(furby, THINKING_COLOR)  # lit only while the reply is being worked out
             try:
                 reply = await asyncio.to_thread(assistant.reply, heard)
                 if assistant.last_fact is not None:
@@ -233,10 +233,10 @@ async def run(settings: Settings) -> None:
             print(f"Furby: {reply}")
             log.info("Mood: %s", assistant.last_mood)
 
-            await asyncio.sleep(MIC_RELEASE_SECONDS)
-            await _set_antenna(furby, SPEAKING_COLOR)
-            speech = await asyncio.to_thread(tts.synthesize, reply)
+            speech = await asyncio.to_thread(tts.synthesize, reply)  # amber stays on until the speech is ready
             seconds = len(speech) / tts.sample_rate
+            await asyncio.sleep(MIC_RELEASE_SECONDS)
+            await _set_antenna(furby, SPEAKING_COLOR)  # blue while the response plays
             try:
                 if movement is not None and not movement.done():
                     movement.cancel()  # a new reply replaces the previous movement
