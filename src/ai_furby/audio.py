@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 
 import numpy as np
 import sounddevice as sd
@@ -184,9 +185,11 @@ def record_utterance(
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
+    on_speech_start: Callable[[], None] | None = None,
 ) -> np.ndarray:
     """Waits for speech on `feed`, records until a pause, and returns mono float32 audio at 16 kHz.
 
+    `on_speech_start` runs once, from this thread, when speech is confirmed.
     Returns an empty array if no speech starts within `wait_seconds`.
     """
     device_rate = feed.rate
@@ -223,6 +226,8 @@ def record_utterance(
                 speaking = True
                 captured.extend(pending)
                 pending.clear()
+                if on_speech_start is not None:
+                    on_speech_start()
             continue
 
         captured.append(samples)

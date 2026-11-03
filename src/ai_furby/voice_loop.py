@@ -101,8 +101,10 @@ WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for someth
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
 MOVEMENT_DELAY_SECONDS = 0.3  # how long audio leads the Furby's movement; tune by listening and watching
-SPEAKING_COLOR = (0, 0, 255)
-THINKING_COLOR = (255, 160, 0)  # amber while the assistant is working on a reply
+RECEIVING_COLOR = (0, 0, 255)  # blue: speech detected, so the Furby is taking it in
+PROCESSING_COLOR = (160, 0, 255)  # purple: transcribing the speech and working out a reply
+REPLYING_COLOR = (255, 160, 0)  # amber: the reply is being voiced and played
+LIGHT_REFRESH_SECONDS = 2.0  # the Furby can drop a color on its own, so the current one is re-sent this often
 
 
 async def run(settings: Settings) -> None:
@@ -147,6 +149,8 @@ async def run(settings: Settings) -> None:
             stack.callback(mask_task.cancel)
             link_task = asyncio.create_task(_watch_link(furby, tts, audio, settings, link_back))
             stack.callback(link_task.cancel)
+            light_task = asyncio.create_task(_keep_light_on(furby))
+            stack.callback(light_task.cancel)
         if furby is not None and settings.web_port and settings.web_token:
             from ai_furby.web_ui import serve as serve_phone_page
 
@@ -165,6 +169,11 @@ async def run(settings: Settings) -> None:
         await asyncio.sleep(BOOT_ANTENNA_SECONDS)
         await _set_antenna(furby, (0, 0, 0))
         movement: asyncio.Task | None = None  # the Furby's movement for the last reply, if it is still running
+        loop = asyncio.get_running_loop()
+
+        def _on_speech_start() -> None:
+            # Called from the recording thread, so the blue light is handed to the event loop.
+            asyncio.run_coroutine_threadsafe(_set_antenna(furby, RECEIVING_COLOR), loop)
         while True:
             if mask_worn.is_set():
                 # Asleep while the mask is on: ignore the wake word, antenna, and speech until it's removed.
@@ -212,7 +221,11 @@ async def run(settings: Settings) -> None:
             if woke_by is None:
                 mic.drain()  # drop the Furby's own voice and movement noise; after a wake, keep the audio for the question
             utterance = await asyncio.to_thread(
-                audio.record_utterance, mic, threshold=settings.mic_threshold, wait_seconds=wait
+                audio.record_utterance,
+                mic,
+                threshold=settings.mic_threshold,
+                wait_seconds=wait,
+                on_speech_start=_on_speech_start,
             )
             if mask_worn.is_set():
                 continue  # the mask went on while we were listening; ignore whatever was heard
@@ -233,7 +246,7 @@ async def run(settings: Settings) -> None:
                 conversing = False
                 continue
             conversing = True
-            await _set_antenna(furby, THINKING_COLOR)  # amber while Mistral transcribes and answers
+            await _set_antenna(furby, PROCESSING_COLOR)  # purple while Mistral transcribes and answers
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
@@ -280,10 +293,10 @@ async def run(settings: Settings) -> None:
 
             # Whatever happens to the speech, the listening window opens afterwards, so the mic and green light come back.
             try:
-                speech = await asyncio.to_thread(tts.synthesize, reply)  # amber stays on until the speech is ready
+                await _set_antenna(furby, REPLYING_COLOR)  # amber while the reply is voiced and played
+                speech = await asyncio.to_thread(tts.synthesize, reply)
                 seconds = len(speech) / tts.sample_rate
                 await asyncio.sleep(MIC_RELEASE_SECONDS)
-                await _set_antenna(furby, SPEAKING_COLOR)  # blue while the response plays
                 if movement is not None and not movement.done():
                     movement.cancel()  # a new reply replaces the previous movement
                 movement = await _speak_with_movement(
@@ -508,6 +521,7 @@ async def _wake_up(furby: FurbyRemote | None) -> None:
 
 
 _antenna_tasks: set[asyncio.Task] = set()  # keeps the color commands alive until they finish
+_last_light: dict[str, tuple[int, int, int]] = {}  # the color the program last asked for, re-sent by _keep_light_on
 
 
 async def _listening_light_on(furby: FurbyRemote | None) -> bool:
@@ -515,7 +529,19 @@ async def _listening_light_on(furby: FurbyRemote | None) -> bool:
     With no Furby configured there is no light to confirm, so the mic is allowed."""
     if furby is None:
         return True
-    return await furby.set_antenna_confirmed(*LISTENING_COLOR)
+    confirmed = await furby.set_antenna_confirmed(*LISTENING_COLOR)
+    if confirmed:
+        _last_light["color"] = LISTENING_COLOR
+    return confirmed
+
+
+async def _keep_light_on(furby: FurbyRemote) -> None:
+    """Re-sends the current color, so the light holds for the whole listening window."""
+    while True:
+        await asyncio.sleep(LIGHT_REFRESH_SECONDS)
+        color = _last_light.get("color")
+        if color is not None:
+            await _set_antenna(furby, color)
 
 
 async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:
@@ -523,6 +549,7 @@ async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -
     and the conversation (including the listening window) must not stall on it."""
     if furby is None:
         return
+    _last_light["color"] = color
     task = asyncio.create_task(_send_antenna(furby, color))
     _antenna_tasks.add(task)
     task.add_done_callback(_antenna_tasks.discard)
