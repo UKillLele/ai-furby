@@ -97,10 +97,14 @@ class FurbyRemote:
         await self.set_group_active(True)
         try:
             remaining = seconds
+            wait = 0.0
             while remaining > 0:
                 await self.trigger_action(*action)
                 wait = min(step, remaining)
                 await asyncio.sleep(wait)
                 remaining -= wait
+            # The last action may still be playing when the timer runs out; let it finish before returning.
+            if wait:
+                await asyncio.sleep(max(0.0, step - wait))
         finally:
             await self.set_group_active(False)

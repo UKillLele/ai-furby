@@ -85,6 +85,7 @@ ECHO_SETTLE_SECONDS = 1.0
 ANTENNA_WINDOW_SECONDS = 1.5  # antenna readings this close together count as one touch
 ANTENNA_TOUCHES_NEEDED = 2  # antenna readings needed within the window; one reading was too easy to trigger by accident
 FOLLOW_UP_SECONDS = 10.0
+BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the program is running
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
@@ -132,6 +133,10 @@ async def run(settings: Settings) -> None:
             page_task = asyncio.create_task(serve_phone_page(furby, settings.web_port, settings.web_token))
             stack.callback(page_task.cancel)
             print("Phone page: http://furby.local/ (on the Pi; use the computer's address elsewhere)")
+        # Antenna lights for a few seconds to show the program has started, then goes dark until the wake word.
+        await _set_antenna(furby, LISTENING_COLOR)
+        await asyncio.sleep(BOOT_ANTENNA_SECONDS)
+        await _set_antenna(furby, (0, 0, 0))
         while True:
             if mask_worn.is_set():
                 # Asleep while the mask is on: ignore the wake word, antenna, and speech until it's removed.
