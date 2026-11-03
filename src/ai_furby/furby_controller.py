@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
+import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -48,11 +50,21 @@ class FurbyController:
 
     async def connect(self, retries: int = 3) -> None:
         async with self._connect_lock:
-            await self._client.connect(
-                address=self._settings.furby_address,
-                timeout=self._settings.furby_connect_timeout,
-                retries=retries,
-            )
+            try:
+                await self._connect_once(retries)
+            except RuntimeError as error:
+                # After the Furby restarts, BlueZ can still hold the old link, which hides it from the scan.
+                # Clear that link and try once more.
+                if "was not found" not in str(error) or not await _clear_stale_link(self._settings.furby_address):
+                    raise
+                await self._connect_once(retries)
+
+    async def _connect_once(self, retries: int) -> None:
+        await self._client.connect(
+            address=self._settings.furby_address,
+            timeout=self._settings.furby_connect_timeout,
+            retries=retries,
+        )
 
     async def disconnect(self) -> None:
         await self._client.disconnect()
@@ -131,6 +143,17 @@ class FurbyController:
     def sensor_events(self) -> AsyncIterator[Any]:
         """Yield raw sensor readings (touch, shake, antenna joystick) as PyFluff produces them."""
         return self._client.sensor_stream()
+
+
+async def _clear_stale_link(address: str | None) -> bool:
+    """Asks BlueZ to drop its record of the Furby's old connection. Returns False if there's nothing to do here."""
+    if not address or shutil.which("bluetoothctl") is None:
+        return False  # not on the Pi, or no BlueZ to ask
+    log.info("Clearing the old Bluetooth link to %s", address)
+    await asyncio.to_thread(
+        subprocess.run, ["bluetoothctl", "disconnect", address], capture_output=True, timeout=10, check=False
+    )
+    return True
 
 
 def _check_channel(name: str, value: int) -> None:
