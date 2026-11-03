@@ -137,6 +137,7 @@ async def run(settings: Settings) -> None:
         await _set_antenna(furby, LISTENING_COLOR)
         await asyncio.sleep(BOOT_ANTENNA_SECONDS)
         await _set_antenna(furby, (0, 0, 0))
+        movement: asyncio.Task | None = None  # the Furby's movement for the last reply, if it is still running
         while True:
             if mask_worn.is_set():
                 # Asleep while the mask is on: ignore the wake word, antenna, and speech until it's removed.
@@ -233,7 +234,9 @@ async def run(settings: Settings) -> None:
             speech = await asyncio.to_thread(tts.synthesize, reply)
             seconds = len(speech) / tts.sample_rate
             try:
-                await _speak_with_movement(
+                if movement is not None and not movement.done():
+                    movement.cancel()  # a new reply replaces the previous movement
+                movement = await _speak_with_movement(
                     furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
                 )
                 last_speech = time.monotonic()  # the 10-second quiet period starts after the reply
@@ -251,17 +254,21 @@ async def _speak_with_movement(
     sample_rate: int,
     seconds: float,
     speaker_device: str | None,
-) -> None:
-    """Plays the reply while the Furby moves for the same length of time."""
+) -> asyncio.Task | None:
+    """Plays the reply while the Furby moves. Returns when the speech ends; the movement continues in the background
+    and is returned so the caller can cancel or await it."""
     speaking = asyncio.create_task(asyncio.to_thread(audio.play, speech, sample_rate, speaker_device))
     if furby is None or mood is None or mood not in MOOD_ACTIONS:
         await speaking
-        return
+        return None
     # Audio takes a moment to open its stream, and Bluetooth commands take a moment to reach the Furby.
     # Let the audio start first, then start the movement, so the two line up.
     log.info("Movement starting: %s for %.1f s", mood, seconds - MOVEMENT_DELAY_SECONDS)
     await asyncio.sleep(MOVEMENT_DELAY_SECONDS)
-    await asyncio.gather(_move_with_beak(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS), speaking)
+    movement = asyncio.create_task(_move_with_beak(furby, MOOD_ACTIONS[mood], seconds - MOVEMENT_DELAY_SECONDS))
+    await speaking
+    # The mic opens as soon as the speech ends, so the movement finishes while the Furby listens.
+    return movement
 
 
 async def _move_with_beak(furby: FurbyRemote, action: tuple[int, int, int, int], seconds: float) -> None:
@@ -281,7 +288,9 @@ async def _say_goodbye(furby, tts, audio, settings: Settings) -> None:
     try:
         speech = await asyncio.to_thread(tts.synthesize, "Bye for now!")
         seconds = len(speech) / tts.sample_rate
-        await _speak_with_movement(furby, "sleepy", audio, speech, tts.sample_rate, seconds, settings.speaker_device)
+        movement = await _speak_with_movement(furby, "sleepy", audio, speech, tts.sample_rate, seconds, settings.speaker_device)
+        if movement is not None:
+            await movement  # the goodbye waits for its movement, since the program may exit next
     except Exception:  # a speaker problem should not stop the goodbye
         log.warning("Could not play the goodbye", exc_info=True)
     await asyncio.sleep(ECHO_SETTLE_SECONDS)
