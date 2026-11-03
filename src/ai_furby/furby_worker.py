@@ -71,8 +71,8 @@ async def _reconnect_if_needed(furby: FurbyController, state: dict[str, Any]) ->
         print(f"Furby: connection attempt {state['attempts']}", flush=True)
         try:
             await furby.connect(retries=1, timeout=CONNECT_ATTEMPT_SECONDS)
-        except Exception:
-            log.debug("Furby still unreachable", exc_info=True)
+        except Exception as error:
+            print(f"Furby: attempt failed: {error}", flush=True)
             return
         print("Furby: reconnected.", flush=True)
         state["connected"] = True

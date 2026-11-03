@@ -522,11 +522,11 @@ async def _listening_light_on(furby: FurbyRemote | None) -> bool:
 
 
 async def _keep_light_on(furby: FurbyRemote) -> None:
-    """Re-sends the current color, so the light holds for the whole listening window."""
+    """Re-sends the current color, so the light holds for the whole listening window. Paused while the link is down."""
     while True:
         await asyncio.sleep(LIGHT_REFRESH_SECONDS)
         color = _last_light.get("color")
-        if color is not None:
+        if color is not None and furby.link_up:
             await _set_antenna(furby, color)
 
 
