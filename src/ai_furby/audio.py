@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import queue
 import subprocess
+import threading
 from collections import deque
 
 import numpy as np
@@ -19,6 +21,7 @@ MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
+MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 
 
 def find_input_device(name_part: str) -> int | None:
@@ -91,25 +94,68 @@ def _s32_to_float(raw: bytes) -> np.ndarray:
     return np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
 
 
+class MicFeed:
+    """Keeps the microphone open on a background thread, so no audio is lost between the wake word and the question.
+
+    Blocks of mono float32 audio at `rate` queue up until something reads them. `drain()` throws away audio that
+    was captured earlier, such as the Furby's own voice during playback.
+    """
+
+    def __init__(self, device: str | int | None) -> None:
+        self.rate = capture_rate(device)
+        self.block = int(self.rate * BLOCK_SECONDS)
+        self._device = device
+        self._blocks: queue.Queue[np.ndarray] = queue.Queue(maxsize=MIC_QUEUE_BLOCKS)
+        self._running = threading.Event()
+        self._error: Exception | None = None
+        self._thread = threading.Thread(target=self._run, name="mic-feed", daemon=True)
+
+    def start(self) -> None:
+        self._running.set()
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running.clear()
+        self._thread.join(timeout=2)
+
+    def read(self, timeout: float) -> np.ndarray:
+        """The next block of audio. Raises queue.Empty if none arrives within `timeout` seconds."""
+        if self._error is not None:
+            raise RuntimeError(f"microphone stopped: {self._error}") from self._error
+        return self._blocks.get(timeout=timeout)
+
+    def drain(self) -> None:
+        while True:
+            try:
+                self._blocks.get_nowait()
+            except queue.Empty:
+                return
+
+    def _run(self) -> None:
+        try:
+            with open_microphone(self._device, self.rate, self.block) as stream:
+                while self._running.is_set():
+                    data, _overflowed = stream.read(self.block)
+                    if self._blocks.full():
+                        self._blocks.get_nowait()
+                    self._blocks.put_nowait(data[:, 0].copy())
+        except Exception as error:  # reported to the next reader instead of stopping silently
+            self._error = error
+            log.exception("Microphone feed stopped")
+
+
 def record_utterance(
+    feed: MicFeed,
     threshold: float = 0.01,
     silence_seconds: float = 1.0,
     max_seconds: float = 15.0,
     wait_seconds: float = 30.0,
-    device: str | int | None = None,
 ) -> np.ndarray:
-    """Waits for speech, records until a pause, and returns mono float32 audio at 16 kHz.
+    """Waits for speech on `feed`, records until a pause, and returns mono float32 audio at 16 kHz.
 
     Returns an empty array if no speech starts within `wait_seconds`.
     """
-    if isinstance(device, str) and not is_alsa_device(device):
-        device = find_input_device(device)
-        if device is None:
-            raise RuntimeError(f"No input device matches {device!r}; list devices with sounddevice.query_devices()")
-
-    # WASAPI often refuses 16 kHz, so capture at the device's own rate and resample afterwards.
-    device_rate = capture_rate(device)
-    block = int(device_rate * BLOCK_SECONDS)
+    device_rate = feed.rate
     silent_blocks_to_stop = int(silence_seconds / BLOCK_SECONDS)
     max_blocks = int(max_seconds / BLOCK_SECONDS)
     wait_blocks = int(wait_seconds / BLOCK_SECONDS)
@@ -120,38 +166,44 @@ def record_utterance(
     speaking = False
     silent_run = 0
 
-    with open_microphone(device, device_rate, block) as stream:
-        for index in range(max_blocks + wait_blocks):
-            data, _overflowed = stream.read(block)
-            samples = remove_offset(data[:, 0].copy())
-            level = float(np.sqrt(np.mean(np.square(samples))))
-            if not speaking:
-                recent_levels.append(level)
-            # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
-            loud = level > _adaptive_threshold(threshold, recent_levels)
+    for index in range(max_blocks + wait_blocks):
+        samples = remove_offset(_next_block(feed))
+        level = float(np.sqrt(np.mean(np.square(samples))))
+        if not speaking:
+            recent_levels.append(level)
+        # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
+        loud = level > _adaptive_threshold(threshold, recent_levels)
 
-            if not speaking:
-                if index >= wait_blocks:
-                    break
-                if not loud:
-                    pending.clear()
-                    continue
-                pending.append(samples)
-                # Short clicks and bumps are loud for only a block or two; require a sustained burst before starting.
-                if len(pending) >= MIN_SPEECH_BLOCKS:
-                    speaking = True
-                    captured.extend(pending)
-                    pending.clear()
-                continue
-
-            captured.append(samples)
-            silent_run = 0 if loud else silent_run + 1
-            if silent_run >= silent_blocks_to_stop:
+        if not speaking:
+            if index >= wait_blocks:
                 break
+            if not loud:
+                pending.clear()
+                continue
+            pending.append(samples)
+            # Short clicks and bumps are loud for only a block or two; require a sustained burst before starting.
+            if len(pending) >= MIN_SPEECH_BLOCKS:
+                speaking = True
+                captured.extend(pending)
+                pending.clear()
+            continue
+
+        captured.append(samples)
+        silent_run = 0 if loud else silent_run + 1
+        if silent_run >= silent_blocks_to_stop:
+            break
 
     if not captured:
         return np.zeros(0, dtype=np.float32)
     return _resample(np.concatenate(captured), device_rate, INPUT_SAMPLE_RATE)
+
+
+def _next_block(feed: MicFeed) -> np.ndarray:
+    while True:
+        try:
+            return feed.read(timeout=1.0)
+        except queue.Empty:
+            continue
 
 
 def remove_offset(samples: np.ndarray) -> np.ndarray:

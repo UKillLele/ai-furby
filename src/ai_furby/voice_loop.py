@@ -109,6 +109,11 @@ async def run(settings: Settings) -> None:
         # Bluetooth connection fail with "Thread is configured for Windows GUI".
         from ai_furby import audio
 
+        # One microphone stays open for the whole run, so nothing said after the wake word is lost.
+        mic = audio.MicFeed(settings.mic_device)
+        mic.start()
+        stack.callback(mic.stop)
+
         if furby is None:
             print("Furby: not connected (FURBY_ADDRESS is not set in this terminal), so it won't move.")
         else:
@@ -117,7 +122,7 @@ async def run(settings: Settings) -> None:
         if settings.wake_word_enabled:
             from ai_furby.wake_word import WakeWordListener, default_model_path
 
-            wake = WakeWordListener(default_model_path(), threshold=settings.wake_threshold, device=settings.mic_device)
+            wake = WakeWordListener(default_model_path(), threshold=settings.wake_threshold)
             print("Say 'Hey Furby' to start talking. Say 'goodbye Furby' to stop.")
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
@@ -151,7 +156,7 @@ async def run(settings: Settings) -> None:
             woke_by = None  # "voice" or "antenna" right after a wake; None otherwise
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
-                woke_by = await _wait_for_wake_word_or_antenna(wake, furby)
+                woke_by = await _wait_for_wake_word_or_antenna(wake, mic, furby)
                 print(f"(woken by {woke_by})")
                 log.info("Furby is awake (woken by %s); eyes on", woke_by)
                 await _wake_up(furby)
@@ -166,8 +171,10 @@ async def run(settings: Settings) -> None:
                 wait = WAKE_FOLLOW_UP_SECONDS
             else:
                 wait = max(0.0, listen_until - time.monotonic()) if conversing else 30.0
+            if woke_by is None:
+                mic.drain()  # drop the Furby's own voice and movement noise; after a wake, keep the audio for the question
             utterance = await asyncio.to_thread(
-                audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device, wait_seconds=wait
+                audio.record_utterance, mic, threshold=settings.mic_threshold, wait_seconds=wait
             )
             if mask_worn.is_set():
                 continue  # the mask went on while we were listening; ignore whatever was heard
@@ -311,10 +318,10 @@ async def _go_to_sleep(furby: FurbyRemote | None) -> None:
         log.warning("Could not put the Furby to sleep", exc_info=True)
 
 
-async def _wait_for_wake_word_or_antenna(wake, furby: FurbyRemote | None) -> str:
+async def _wait_for_wake_word_or_antenna(wake, mic, furby: FurbyRemote | None) -> str:
     """Returns "voice" when the wake word is heard or "antenna" when the antenna is touched, whichever comes first."""
     stop = threading.Event()
-    voice = asyncio.create_task(asyncio.to_thread(wake.wait_for_wake, None, stop))
+    voice = asyncio.create_task(asyncio.to_thread(wake.wait_for_wake, mic, None, stop))
     touch = asyncio.create_task(_antenna_touched(furby))
     try:
         done, _pending = await asyncio.wait({voice, touch}, return_when=asyncio.FIRST_COMPLETED)
