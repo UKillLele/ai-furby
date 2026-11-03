@@ -47,8 +47,8 @@ def _announce(state: dict[str, Any], status: str) -> None:
         events.put(status)
 
 
-async def _reconnect_if_needed(furby: FurbyController, state: dict[str, bool]) -> None:
-    """One check: if the Furby is not connected, try to connect. Prints and reports once when it is lost and once when it returns."""
+async def _reconnect_if_needed(furby: FurbyController, state: dict[str, Any]) -> None:
+    """One numbered connection attempt, if the Furby is not connected. Only one attempt runs at a time."""
     if furby.connected:
         if not state["connected"]:
             print("Furby: reconnected.", flush=True)
@@ -56,19 +56,29 @@ async def _reconnect_if_needed(furby: FurbyController, state: dict[str, bool]) -
             _announce(state, "link:up")
             await _reapply_eyes(furby, state)
         return
-    if state["connected"]:
-        print("Furby: not reachable. It may be asleep; touch its antenna or power it on to reconnect.", flush=True)
-        state["connected"] = False
-        _announce(state, "link:down")
+    if state["attempting"]:
+        return  # an attempt is already under way; requests during it are not queued up
+    state["attempting"] = True
     try:
-        await furby.connect(retries=1)
-    except Exception:
-        log.debug("Furby still unreachable", exc_info=True)
-        return
-    print("Furby: reconnected.", flush=True)
-    state["connected"] = True
-    _announce(state, "link:up")
-    await _reapply_eyes(furby, state)
+        if state["connected"]:
+            print("Furby: not reachable. It may be asleep; touch its antenna or power it on to reconnect.", flush=True)
+            state["connected"] = False
+            state["attempts"] = 0
+            _announce(state, "link:down")
+        state["attempts"] += 1
+        print(f"Furby: connection attempt {state['attempts']}", flush=True)
+        try:
+            await furby.connect(retries=1, timeout=STARTUP_CONNECT_SECONDS)
+        except Exception:
+            log.debug("Furby still unreachable", exc_info=True)
+            return
+        print("Furby: reconnected.", flush=True)
+        state["connected"] = True
+        state["attempts"] = 0
+        _announce(state, "link:up")
+        await _reapply_eyes(furby, state)
+    finally:
+        state["attempting"] = False
 
 
 async def _keep_connected(furby: FurbyController, state: dict[str, bool]) -> None:
@@ -88,7 +98,7 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
         connected = False
         log.warning("Could not connect to the Furby yet; will keep trying", exc_info=True)
     # eyes_on: what the assistant last asked for
-    state = {"connected": connected, "eyes_on": False, "events": events}
+    state = {"connected": connected, "eyes_on": False, "events": events, "attempts": 0, "attempting": False}
     _announce(state, "link:up" if connected else "link:down")
     reconnect_task = asyncio.create_task(_keep_connected(furby, state))
 

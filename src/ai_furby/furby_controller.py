@@ -37,6 +37,7 @@ class FurbyController:
             client_factory = FurbyConnect
         self._client = client_factory()
         self._connect_lock = asyncio.Lock()  # the command loop and the reconnect check must not connect at once
+        self._stale_cleared = False  # the old Bluetooth link is cleared once per lost-link period, not on every attempt
 
     async def __aenter__(self) -> "FurbyController":
         await self.connect()
@@ -55,10 +56,14 @@ class FurbyController:
                 await self._connect_once(retries, timeout)
             except RuntimeError as error:
                 # After the Furby restarts, BlueZ can still hold the old link, which hides it from the scan.
-                # Clear that link and try once more.
-                if "was not found" not in str(error) or not await _clear_stale_link(self._settings.furby_address):
+                # Clear that link once and try again; later attempts in the same outage skip this.
+                if "was not found" not in str(error) or self._stale_cleared:
                     raise
+                if not await _clear_stale_link(self._settings.furby_address):
+                    raise
+                self._stale_cleared = True
                 await self._connect_once(retries, timeout)
+            self._stale_cleared = False
 
     async def _connect_once(self, retries: int, timeout: float | None) -> None:
         if self._settings.furby_address and sys.platform.startswith("linux"):
