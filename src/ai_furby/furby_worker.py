@@ -49,6 +49,8 @@ def _announce(state: dict[str, Any], status: str) -> None:
 
 async def _reconnect_if_needed(furby: FurbyController, state: dict[str, Any]) -> None:
     """One numbered connection attempt, if the Furby is not connected. Only one attempt runs at a time."""
+    state.setdefault("attempting", False)
+    state.setdefault("attempts", 0)
     if furby.connected:
         if not state["connected"]:
             print("Furby: reconnected.", flush=True)
