@@ -30,7 +30,7 @@ def run_worker(commands: Any, settings: Settings, events: Any | None = None) -> 
 
 
 RECONNECT_SECONDS = 10.0  # how often to look for a Furby that is asleep or out of range
-STARTUP_CONNECT_SECONDS = 5.0  # the first connection at startup; short, so the startup prompt is not held back
+CONNECT_ATTEMPT_SECONDS = 3.0  # each connection attempt; short, so the retries keep their pace
 
 
 async def _reapply_eyes(furby: FurbyController, state: dict[str, bool]) -> None:
@@ -70,7 +70,7 @@ async def _reconnect_if_needed(furby: FurbyController, state: dict[str, Any]) ->
         state["attempts"] += 1
         print(f"Furby: connection attempt {state['attempts']}", flush=True)
         try:
-            await furby.connect(retries=1, timeout=STARTUP_CONNECT_SECONDS)
+            await furby.connect(retries=1, timeout=CONNECT_ATTEMPT_SECONDS)
         except Exception:
             log.debug("Furby still unreachable", exc_info=True)
             return
@@ -95,7 +95,7 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
     furby = FurbyController(settings)
     connected = True
     try:
-        await furby.connect(retries=1, timeout=STARTUP_CONNECT_SECONDS)  # the reconnect loop keeps trying after this
+        await furby.connect(retries=1, timeout=CONNECT_ATTEMPT_SECONDS)  # the reconnect loop keeps trying after this
     except Exception:
         connected = False
         log.warning("Could not connect to the Furby yet; will keep trying", exc_info=True)
