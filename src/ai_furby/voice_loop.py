@@ -122,7 +122,7 @@ async def run(settings: Settings) -> None:
         else:
             print("Listening. Say 'goodbye Furby' or press Ctrl+C to stop.")
         conversing = False  # True while a conversation is ongoing and the wake word isn't required
-        last_speech = 0.0  # when the user last spoke or the Furby last replied; sleep waits FOLLOW_UP_SECONDS after this
+        listen_until = 0.0  # the listening window ends at this time; the antenna is green for exactly that window
         mask_worn = asyncio.Event()  # set while the sleep mask is on; nothing wakes the Furby until it's removed
         if furby is not None:
             mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
@@ -158,13 +158,14 @@ async def run(settings: Settings) -> None:
                 if woke_by == "antenna":
                     await _greet(furby, tts, audio, settings)
                     conversing = True
+                    listen_until = time.monotonic() + FOLLOW_UP_SECONDS
                     woke_by = None  # the greeting already answered the wake
             await _set_antenna(furby, LISTENING_COLOR)
             # During a conversation, wait up to FOLLOW_UP_SECONDS for the next thing you say; silence ends it.
             if woke_by == "voice":
                 wait = WAKE_FOLLOW_UP_SECONDS
             else:
-                wait = FOLLOW_UP_SECONDS if conversing else 30.0
+                wait = max(0.0, listen_until - time.monotonic()) if conversing else 30.0
             utterance = await asyncio.to_thread(
                 audio.record_utterance, threshold=settings.mic_threshold, device=settings.mic_device, wait_seconds=wait
             )
@@ -175,9 +176,10 @@ async def run(settings: Settings) -> None:
                     # The wake word came with nothing after it: greet, then keep the conversation open.
                     await _greet(furby, tts, audio, settings)
                     conversing = True
+                    listen_until = time.monotonic() + FOLLOW_UP_SECONDS
                     continue
-                if conversing and woke_by is None and time.monotonic() - last_speech < FOLLOW_UP_SECONDS:
-                    # Quiet for a moment, but not yet FOLLOW_UP_SECONDS since the last speech: keep listening.
+                if conversing and woke_by is None and time.monotonic() < listen_until:
+                    # The listening window is still open, so keep listening.
                     await asyncio.sleep(0.2)
                     continue
                 if conversing:
@@ -186,13 +188,12 @@ async def run(settings: Settings) -> None:
                 conversing = False
                 continue
             conversing = True
-            last_speech = time.monotonic()
 
             heard = await asyncio.to_thread(stt.transcribe, utterance)
             if not heard:
                 # Background noise, such as the Furby's own movement, can pass the mic threshold without any words.
                 # Keep listening until the quiet period since the last real speech runs out, then go back to sleep.
-                if conversing and time.monotonic() - last_speech < FOLLOW_UP_SECONDS:
+                if conversing and time.monotonic() < listen_until:
                     continue
                 conversing = False
                 continue
@@ -242,7 +243,7 @@ async def run(settings: Settings) -> None:
                 movement = await _speak_with_movement(
                     furby, assistant.last_mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
                 )
-                last_speech = time.monotonic()  # the 10-second quiet period starts after the reply
+                listen_until = time.monotonic() + FOLLOW_UP_SECONDS  # the green listening window opens after the reply
             except Exception as error:  # a speaker problem should not end the conversation
                 log.exception("Playback failed")
                 print(f"(could not play speech: {type(error).__name__}; check the speakers)")
