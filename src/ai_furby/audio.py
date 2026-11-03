@@ -19,11 +19,12 @@ BLOCK_SECONDS = 0.1
 SILENCE_LEVEL = 1e-4  # samples quieter than this count as digital silence
 NOISE_FLOOR = 0.002  # faint noise (about -54 dB) used in pauses instead of digital silence
 MAX_PEAK = 0.8  # playback headroom so the device does not clip
+PLAYBACK_TAIL_SECONDS = 0.4  # quiet padding after each playback so the last word is not clipped
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
 SPEECH_HIGHPASS_HZ = 300.0  # loudness is judged above this; motor rumble and room hum sit below the voice band
-MIN_UTTERANCE_SECONDS = 0.6  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
+MIN_UTTERANCE_SECONDS = 0.4  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 
 
@@ -264,6 +265,9 @@ def play(samples: np.ndarray, sample_rate: int, device: str | None = None) -> No
     rng = np.random.default_rng()
     quiet = np.abs(samples) < SILENCE_LEVEL
     samples = np.where(quiet, rng.uniform(-NOISE_FLOOR, NOISE_FLOOR, size=samples.shape).astype(np.float32), samples)
+    # Some Bluetooth and ALSA paths drop the last buffer, which clips the final word. A short quiet tail avoids that.
+    tail = rng.uniform(-NOISE_FLOOR, NOISE_FLOOR, size=int(device_rate * PLAYBACK_TAIL_SECONDS)).astype(np.float32)
+    samples = np.concatenate([samples, tail])
     try:
         _play_once(samples, device_rate, output)
     except sd.PortAudioError:

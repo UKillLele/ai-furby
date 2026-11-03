@@ -182,7 +182,7 @@ async def run(settings: Settings) -> None:
                 log.info("Furby is awake (woken by %s); eyes on", woke_by)
                 await _wake_up(furby)
                 if woke_by == "link":
-                    await _ask_random_question(assistant, tts, audio, settings)
+                    movement = await _ask_random_question(furby, assistant, tts, audio, settings)
                     conversing = True
                     listen_until = time.monotonic() + FOLLOW_UP_SECONDS
                     woke_by = None  # the question already answered the wake
@@ -366,15 +366,28 @@ async def _wait_for_wake_word_or_antenna(wake, mic, furby: FurbyRemote | None, l
     return "antenna"
 
 
-async def _ask_random_question(assistant, tts, audio, settings: Settings) -> None:
-    """After a reconnect, Furby says it is awake and asks a random question that Mistral makes up."""
+async def _ask_random_question(furby, assistant, tts, audio, settings: Settings) -> asyncio.Task | None:
+    """After the first connection, Furby says it is awake and asks a random question that Mistral makes up.
+    The mouth moves with the speech, the same as for a reply. Returns the movement task, if one is running."""
+    mood = assistant.last_mood
     try:
         text = await asyncio.to_thread(assistant.reply, ASK_PROMPT)
+        mood = assistant.last_mood
     except Exception:  # a failed API call should still let Furby greet
         log.warning("Could not generate the awake question", exc_info=True)
         text = AWAKE_FALLBACK
     print(f"Furby: {text}")
-    await _say(text, tts, audio, settings)
+    movement = None
+    try:
+        speech = await asyncio.to_thread(tts.synthesize, text)
+        seconds = len(speech) / tts.sample_rate
+        movement = await _speak_with_movement(
+            furby, mood, audio, speech, tts.sample_rate, seconds, settings.speaker_device
+        )
+    except Exception:  # a speech problem should not stop the conversation from opening
+        log.warning("Could not play the awake question", exc_info=True)
+    await asyncio.sleep(ECHO_SETTLE_SECONDS)
+    return movement
 
 
 async def _greet(furby, tts, audio, settings: Settings) -> None:
