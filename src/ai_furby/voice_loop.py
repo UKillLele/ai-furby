@@ -176,8 +176,8 @@ async def run(settings: Settings) -> None:
             woke_by = None  # "voice" or "antenna" right after a wake; None otherwise
             if wake is not None and not conversing:
                 await _go_to_sleep(furby)
-                link_back.clear()  # only a reconnect during this wait counts
                 woke_by = await _wait_for_wake_word_or_antenna(wake, mic, furby, link_back)
+                link_back.clear()  # the first-connection question, or a wake, uses this up
                 print(f"(woken by {woke_by})")
                 log.info("Furby is awake (woken by %s); eyes on", woke_by)
                 await _wake_up(furby)
@@ -419,9 +419,13 @@ async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings, link_b
     the connection every few seconds for a while."""
     while not furby.link_reported:
         await asyncio.sleep(0.5)  # wait for the first connection report from the Bluetooth child
+    awaiting_first_connection = True  # only the first connection after startup asks a question; later reconnects don't
     while True:
         await asyncio.sleep(1.0)
         if furby.link_up:
+            if awaiting_first_connection:
+                awaiting_first_connection = False
+                link_back.set()
             continue
         print("(Furby is not connected)")
         await _say(LINK_PROMPT, tts, audio, settings)
@@ -433,7 +437,9 @@ async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings, link_b
         while not furby.link_up:
             await asyncio.sleep(1.0)
         print("(Furby reconnected)")
-        link_back.set()  # the next wake wait asks a question without needing the wake word
+        if awaiting_first_connection:
+            awaiting_first_connection = False
+            link_back.set()
 
 
 async def _watch_sleep_mask(furby: FurbyRemote, mask_worn: asyncio.Event) -> None:
