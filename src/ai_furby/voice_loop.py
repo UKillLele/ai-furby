@@ -391,9 +391,20 @@ async def _wake_up(furby: FurbyRemote | None) -> None:
         log.warning("Could not turn the Furby's eyes on", exc_info=True)
 
 
+_antenna_tasks: set[asyncio.Task] = set()  # keeps the color commands alive until they finish
+
+
 async def _set_antenna(furby: FurbyRemote | None, color: tuple[int, int, int]) -> None:
+    """Sends the color without waiting for it. A dropped Bluetooth link can take about 20 seconds to time out,
+    and the conversation (including the listening window) must not stall on it."""
     if furby is None:
         return
+    task = asyncio.create_task(_send_antenna(furby, color))
+    _antenna_tasks.add(task)
+    task.add_done_callback(_antenna_tasks.discard)
+
+
+async def _send_antenna(furby: FurbyRemote, color: tuple[int, int, int]) -> None:
     try:
         await furby.set_antenna_color(*color)
     except Exception:  # the Furby is a nice-to-have; a dropped BLE link should not stop the conversation
