@@ -10,6 +10,7 @@ from collections import deque
 
 import numpy as np
 import sounddevice as sd
+from scipy.signal import butter, sosfilt, sosfilt_zi
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ MAX_PEAK = 0.8  # playback headroom so the device does not clip
 NOISE_WINDOW_BLOCKS = 20  # about 2 s of quiet audio used to estimate room noise
 NOISE_MULTIPLIER = 3.0  # speech must be this many times louder than the room noise
 MIN_SPEECH_BLOCKS = 3  # 0.3 s of sustained loudness before recording starts
+SPEECH_HIGHPASS_HZ = 300.0  # loudness is judged above this; motor rumble and room hum sit below the voice band
 MIN_UTTERANCE_SECONDS = 0.6  # shorter bursts are noise (such as the Furby's own movement), not speech to send to Mistral
 MIC_QUEUE_BLOCKS = 200  # about 20 s of audio; if nothing reads it, the oldest audio is dropped
 
@@ -166,10 +168,13 @@ def record_utterance(
     pending: list[np.ndarray] = []  # loud blocks that may be the start of speech, not yet confirmed
     speaking = False
     silent_run = 0
+    speech_filter = butter(2, SPEECH_HIGHPASS_HZ, btype="highpass", fs=device_rate, output="sos")
+    filter_state = sosfilt_zi(speech_filter) * 0.0
 
     for index in range(max_blocks + wait_blocks):
         samples = remove_offset(_next_block(feed))
-        level = float(np.sqrt(np.mean(np.square(samples))))
+        filtered, filter_state = sosfilt(speech_filter, samples, zi=filter_state)
+        level = float(np.sqrt(np.mean(np.square(filtered))))
         if not speaking:
             recent_levels.append(level)
         # Mic gain changes with Windows settings, so judge speech against the current room noise, not a fixed number.
