@@ -39,17 +39,26 @@ async def _reapply_eyes(furby: FurbyController, state: dict[str, bool]) -> None:
             await furby.set_backlight(True)
 
 
+def _announce(state: dict[str, Any], status: str) -> None:
+    """Tells the parent process whether the Furby is reachable: "link:up" or "link:down"."""
+    events = state.get("events")
+    if events is not None:
+        events.put(status)
+
+
 async def _reconnect_if_needed(furby: FurbyController, state: dict[str, bool]) -> None:
-    """One check: if the Furby is not connected, try to connect. Prints once when it is lost and once when it returns."""
+    """One check: if the Furby is not connected, try to connect. Prints and reports once when it is lost and once when it returns."""
     if furby.connected:
         if not state["connected"]:
             print("Furby: reconnected.", flush=True)
             state["connected"] = True
+            _announce(state, "link:up")
             await _reapply_eyes(furby, state)
         return
     if state["connected"]:
         print("Furby: not reachable. It may be asleep; touch its antenna or power it on to reconnect.", flush=True)
         state["connected"] = False
+        _announce(state, "link:down")
     try:
         await furby.connect(retries=1)
     except Exception:
@@ -57,6 +66,7 @@ async def _reconnect_if_needed(furby: FurbyController, state: dict[str, bool]) -
         return
     print("Furby: reconnected.", flush=True)
     state["connected"] = True
+    _announce(state, "link:up")
     await _reapply_eyes(furby, state)
 
 
@@ -70,11 +80,15 @@ async def _keep_connected(furby: FurbyController, state: dict[str, bool]) -> Non
 
 async def _serve(commands: Any, settings: Settings, events: Any | None = None) -> None:
     furby = FurbyController(settings)
+    connected = True
     try:
         await furby.connect()
     except Exception:
+        connected = False
         log.warning("Could not connect to the Furby yet; will keep trying", exc_info=True)
-    state = {"connected": True, "eyes_on": False}  # eyes_on: what the assistant last asked for
+    # eyes_on: what the assistant last asked for
+    state = {"connected": connected, "eyes_on": False, "events": events}
+    _announce(state, "link:up" if connected else "link:down")
     reconnect_task = asyncio.create_task(_keep_connected(furby, state))
 
     sensor_task = asyncio.create_task(_forward_sensors(furby, events)) if events is not None else None
@@ -97,6 +111,8 @@ async def _serve(commands: Any, settings: Settings, events: Any | None = None) -
             elif kind == "backlight":
                 state["eyes_on"] = bool(args[0])
                 await furby.set_backlight(*args)
+            elif kind == "reconnect":
+                await _reconnect_if_needed(furby, state)
             else:
                 log.warning("Unknown Furby command %r", kind)
         except Exception:  # one failed command should not stop the others

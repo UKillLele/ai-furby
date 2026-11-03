@@ -86,6 +86,9 @@ ANTENNA_WINDOW_SECONDS = 1.5  # antenna readings this close together count as on
 ANTENNA_TOUCHES_NEEDED = 2  # antenna readings needed within the window; one reading was too easy to trigger by accident
 FOLLOW_UP_SECONDS = 20.0
 BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the program is running
+LINK_RETRY_SECONDS = 5.0  # while the Furby is out of contact, try to reconnect this often
+LINK_RETRY_WINDOW_SECONDS = 30.0  # for this long after the prompt, before going quiet until the link is back
+LINK_PROMPT = "I lost my connection. Please touch my antenna so I can reconnect."
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
@@ -132,6 +135,8 @@ async def run(settings: Settings) -> None:
         if furby is not None:
             mask_task = asyncio.create_task(_watch_sleep_mask(furby, mask_worn))
             stack.callback(mask_task.cancel)
+            link_task = asyncio.create_task(_watch_link(furby, tts, audio, settings))
+            stack.callback(link_task.cancel)
         if furby is not None and settings.web_port and settings.web_token:
             from ai_furby.web_ui import serve as serve_phone_page
 
@@ -357,6 +362,24 @@ async def _mouth_for(furby: FurbyRemote, seconds: float) -> None:
         await furby.act_for(pick_mouth_action(), max(seconds, 0.5))
     except Exception:  # a movement failure should not stop the greeting
         log.warning("Could not move the mouth", exc_info=True)
+
+
+async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings) -> None:
+    """When the Furby drops out of reach, says so out loud and retries the connection every few seconds for a while."""
+    while True:
+        await asyncio.sleep(1.0)
+        if furby.link_up:
+            continue
+        print("(Furby lost its connection)")
+        await _say(LINK_PROMPT, tts, audio, settings)
+        deadline = time.monotonic() + LINK_RETRY_WINDOW_SECONDS
+        while not furby.link_up and time.monotonic() < deadline:
+            furby.reconnect()
+            await asyncio.sleep(LINK_RETRY_SECONDS)
+        # After the retry window, stay quiet until the link is back, so the prompt isn't repeated every second.
+        while not furby.link_up:
+            await asyncio.sleep(1.0)
+        print("(Furby reconnected)")
 
 
 async def _watch_sleep_mask(furby: FurbyRemote, mask_worn: asyncio.Event) -> None:
