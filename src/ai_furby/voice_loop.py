@@ -88,7 +88,7 @@ FOLLOW_UP_SECONDS = 20.0
 BOOT_ANTENNA_SECONDS = 3.0  # antenna lights this long at startup to show the program is running
 LINK_RETRY_SECONDS = 5.0  # while the Furby is out of contact, try to reconnect this often
 LINK_RETRY_WINDOW_SECONDS = 30.0  # for this long after the prompt, before going quiet until the link is back
-LINK_PROMPT = "I lost my connection. Please touch my antenna so I can reconnect."
+LINK_PROMPT = "Please touch my antenna so I can connect."
 WAKE_FOLLOW_UP_SECONDS = 1.0  # after the wake word, how long to wait for something to say before greeting
 # After the mic closes, Windows can still be switching the Bluetooth headset; give it a moment before playing.
 MIC_RELEASE_SECONDS = 0.5
@@ -365,12 +365,15 @@ async def _mouth_for(furby: FurbyRemote, seconds: float) -> None:
 
 
 async def _watch_link(furby: FurbyRemote, tts, audio, settings: Settings) -> None:
-    """When the Furby drops out of reach, says so out loud and retries the connection every few seconds for a while."""
+    """At startup, and whenever the Furby drops out of reach: asks for an antenna touch out loud and retries
+    the connection every few seconds for a while."""
+    while not furby.link_reported:
+        await asyncio.sleep(0.5)  # wait for the first connection report from the Bluetooth child
     while True:
         await asyncio.sleep(1.0)
         if furby.link_up:
             continue
-        print("(Furby lost its connection)")
+        print("(Furby is not connected)")
         await _say(LINK_PROMPT, tts, audio, settings)
         deadline = time.monotonic() + LINK_RETRY_WINDOW_SECONDS
         while not furby.link_up and time.monotonic() < deadline:

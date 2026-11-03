@@ -7,6 +7,7 @@ import contextlib
 import logging
 import shutil
 import subprocess
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -60,6 +61,8 @@ class FurbyController:
                 await self._connect_once(retries)
 
     async def _connect_once(self, retries: int) -> None:
+        if self._settings.furby_address and sys.platform.startswith("linux"):
+            await _learn_device(self._settings.furby_address)
         await self._client.connect(
             address=self._settings.furby_address,
             timeout=self._settings.furby_connect_timeout,
@@ -143,6 +146,14 @@ class FurbyController:
     def sensor_events(self) -> AsyncIterator[Any]:
         """Yield raw sensor readings (touch, shake, antenna joystick) as PyFluff produces them."""
         return self._client.sensor_stream()
+
+
+async def _learn_device(address: str) -> None:
+    """On Linux, BlueZ only connects to a device it has seen advertising. A short scan lets it learn the Furby."""
+    from bleak import BleakScanner
+
+    with contextlib.suppress(Exception):
+        await BleakScanner.find_device_by_address(address, timeout=8.0)
 
 
 async def _clear_stale_link(address: str | None) -> bool:

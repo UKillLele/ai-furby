@@ -19,7 +19,8 @@ class FurbyRemote:
         self._process = None
         self._events: Any = Queue()
         self._mask_events: list[str] = []
-        self._link_up = True  # updated from the worker's "link:up" / "link:down" reports
+        self._link_up = False  # updated from the worker's "link:up" / "link:down" reports
+        self._link_reported = False  # becomes True once the worker has said whether it connected
         if commands is None:
             # "spawn" starts a clean interpreter, so the child does not inherit the audio library.
             context = multiprocessing.get_context("spawn")
@@ -54,6 +55,11 @@ class FurbyRemote:
         """Whether the Bluetooth link to the Furby was up at the last report. Updated while sensor readings are drained."""
         return self._link_up
 
+    @property
+    def link_reported(self) -> bool:
+        """Whether the worker has reported the connection state at least once (at startup or later)."""
+        return self._link_reported
+
     def reconnect(self) -> None:
         """Asks the Bluetooth child to try connecting now, instead of waiting for its next check."""
         self._send("reconnect")
@@ -77,6 +83,7 @@ class FurbyRemote:
                 return readings
             if item.startswith("link:"):
                 self._link_up = item == "link:up"
+                self._link_reported = True
             elif item.startswith("mask:"):
                 self._mask_events.append(item)
             else:
